@@ -1,0 +1,18 @@
+# Personal project notes — not for the public repo
+CLAUDE.md
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+DerivedData/
+.build/
+.swiftpm/
+
+# macOS
+.DS_Store
+
+# CocoaPods / SPM (uncomment if you add them later)
+# Pods/
+# .swiftpm/
