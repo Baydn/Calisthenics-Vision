@@ -17,10 +17,26 @@ import Foundation
 
 struct PushUpTracker: MovementTracker {
 
-    // Thresholds from SPEC.md §2.
+    // Nominal thresholds from SPEC.md §2. These are the *starting* values; once
+    // enough motion has been seen the tracker calibrates to the person's own
+    // range instead (see `topThreshold`/`bottomThreshold`).
+    //
+    // Fixed angles don't survive contact with real bodies: arm proportions,
+    // how far someone locks out, how deep they go, and the residual error in a
+    // 3D landmark estimate all shift the numbers. Demanding a literal 160°
+    // lockout means a person whose arms read 150° at the top counts zero reps
+    // forever, which is precisely the failure this replaces.
     var lockoutAngle: Double = 160
     var bottomAngle: Double = 90
     var maxHipDeviation: Double = 15
+
+    /// Total elbow travel required before the motion is treated as a rep at
+    /// all, so fidgeting in position can't calibrate its way into counting.
+    var minimumRange: Double = 45
+    /// How far into the range the top/bottom gates sit, as a fraction. 0.25
+    /// leaves a wide dead band in the middle, which is what stops a wobble
+    /// near either end from double-counting.
+    var gateFraction: Double = 0.25
 
     /// Landmarks below this confidence are ignored — an occluded arm reports
     /// a position, just not a trustworthy one.
@@ -52,6 +68,35 @@ struct PushUpTracker: MovementTracker {
     private(set) var lastElbowAngle: Double?
     private(set) var lastHipAngle: Double?
 
+    /// Elbow extremes seen so far, and the resulting gates. Surfaced so the
+    /// HUD can show why something is or isn't counting.
+    private(set) var observedMin: Double?
+    private(set) var observedMax: Double?
+
+    var observedRange: Double? {
+        guard let observedMin, let observedMax else { return nil }
+        return observedMax - observedMin
+    }
+
+    /// True once enough travel has been seen to trust the person's own range.
+    var isCalibrated: Bool { (observedRange ?? 0) >= minimumRange }
+
+    /// Angle at or above which the arm counts as extended.
+    var topThreshold: Double {
+        guard isCalibrated, let observedMax, let range = observedRange else {
+            return lockoutAngle
+        }
+        return observedMax - range * gateFraction
+    }
+
+    /// Angle at or below which the rep counts as deep enough.
+    var bottomThreshold: Double {
+        guard isCalibrated, let observedMin, let range = observedRange else {
+            return bottomAngle
+        }
+        return observedMin + range * gateFraction
+    }
+
     mutating func update(pose: Pose?, timestampMs: Int) -> MovementEvent? {
         guard let pose else {
             isInPosition = false
@@ -61,7 +106,8 @@ struct PushUpTracker: MovementTracker {
         }
 
         lastElbowAngle = elbowAngle(pose)
-        lastHipAngle = hipAlignment(pose)
+        lastHipAngle = pose.angle(at: .leftHip, from: .leftShoulder, to: .leftAnkle)
+            ?? pose.angle(at: .rightHip, from: .rightShoulder, to: .rightAnkle)
 
         // Only judge a push-up when the body is actually in one. Standing and
         // bending your arms sweeps the same elbow range as a rep, so without
@@ -83,6 +129,7 @@ struct PushUpTracker: MovementTracker {
         }
         guard horizontal, let elbow = lastElbowAngle else { return nil }
 
+        observeRange(elbow)
         progress.repProgress = normalizedDepth(elbow)
 
         if let event = checkForm(pose) { return event }
@@ -93,30 +140,47 @@ struct PushUpTracker: MovementTracker {
         progress = MovementProgress()
         phase = .awaitingLockout
         badFormFrames = 0
+        observedMin = nil
+        observedMax = nil
+    }
+
+    // MARK: - Calibration
+
+    /// Widens the observed range, letting stale extremes decay slowly so one
+    /// unusually deep rep — or a bad frame — doesn't set the gates forever.
+    private mutating func observeRange(_ elbow: Double) {
+        let decay = 0.05                       // ≈1.5°/s at 30 FPS
+        observedMax = max(elbow, (observedMax ?? elbow) - decay)
+        observedMin = min(elbow, (observedMin ?? elbow) + decay)
     }
 
     // MARK: - Rep phases
 
     private mutating func advance(elbow: Double) -> MovementEvent? {
+        let top = topThreshold
+        let bottom = bottomThreshold
+
         switch phase {
         case .awaitingLockout:
-            if elbow >= lockoutAngle { phase = .top }
+            // Needs calibration first, so the very first motion establishes
+            // the range rather than being judged against a guess.
+            if isCalibrated, elbow >= top { phase = .top }
 
         case .top:
-            // Require a clear departure from lockout before we believe a rep
-            // has started; jitter right at the threshold shouldn't advance us.
-            if elbow < lockoutAngle - 10 { phase = .descending }
+            // Require a clear departure before believing a rep has started;
+            // jitter sitting on the gate shouldn't advance us.
+            if elbow < top - dwellMargin { phase = .descending }
 
         case .descending:
-            if elbow <= bottomAngle {
+            if elbow <= bottom {
                 phase = .bottom
-            } else if elbow >= lockoutAngle {
+            } else if elbow >= top {
                 // Went back up without reaching depth — not a rep.
                 phase = .top
             }
 
         case .bottom:
-            if elbow >= lockoutAngle {
+            if elbow >= top {
                 phase = .top
                 progress.reps += 1
                 return .repCompleted(total: progress.reps)
@@ -125,11 +189,20 @@ struct PushUpTracker: MovementTracker {
         return nil
     }
 
-    /// 0 at lockout, 1 at full depth.
+    /// Dead band around a gate, scaled to the person's range so it means the
+    /// same thing whether they travel 50° or 100°.
+    private var dwellMargin: Double {
+        guard let range = observedRange, isCalibrated else { return 10 }
+        return max(5, range * 0.1)
+    }
+
+    /// 0 at the top of the range, 1 at full depth.
     private func normalizedDepth(_ elbow: Double) -> Double {
-        let span = lockoutAngle - bottomAngle
+        let high = observedMax ?? lockoutAngle
+        let low = observedMin ?? bottomAngle
+        let span = high - low
         guard span > 0 else { return 0 }
-        return min(1, max(0, (lockoutAngle - elbow) / span))
+        return min(1, max(0, (high - elbow) / span))
     }
 
     // MARK: - Form

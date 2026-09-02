@@ -171,6 +171,12 @@ struct TrainIdleView: View {
                     .foregroundStyle(tracker.isInPosition
                                      ? Theme.Color.valid : Theme.Color.secondaryText)
                 Text("elbow \(angleText(tracker.lastElbowAngle))")
+                Text("range \(angleText(tracker.observedMin))–\(angleText(tracker.observedMax))")
+                Text(tracker.isCalibrated
+                     ? "gates \(angleText(tracker.bottomThreshold))/\(angleText(tracker.topThreshold))"
+                     : "calibrating…")
+                    .foregroundStyle(tracker.isCalibrated
+                                     ? Theme.Color.valid : Theme.Color.warning)
                 Text("hip   \(angleText(tracker.lastHipAngle))")
             }
             .font(.system(size: 11, weight: .medium, design: .monospaced))
