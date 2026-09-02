@@ -33,11 +33,36 @@ final class CameraController {
         case running
     }
 
+    /// Wide (1×) or ultra-wide (0.5×). Ultra-wide matters more here than in a
+    /// normal camera app: fitting a whole body in frame usually means backing
+    /// the phone a long way off, which most rooms don't allow.
+    enum Lens: Equatable {
+        case wide, ultraWide
+
+        var deviceType: AVCaptureDevice.DeviceType {
+            switch self {
+            case .wide:      .builtInWideAngleCamera
+            case .ultraWide: .builtInUltraWideCamera
+            }
+        }
+        var label: String {
+            switch self {
+            case .wide:      "1×"
+            case .ultraWide: "0.5×"
+            }
+        }
+    }
+
     private(set) var status: Status = .idle
     private(set) var isRecording = false
-    /// Which camera is live. Front is usually what you want when the phone is
-    /// propped up facing you.
-    private(set) var position: AVCaptureDevice.Position = .back
+    /// Starts on the front camera: while setting up you're looking at the
+    /// phone to frame yourself, and seeing your own skeleton is how you know
+    /// it's working before committing to a set.
+    private(set) var position: AVCaptureDevice.Position = .front
+    private(set) var lens: Lens = .wide
+    /// Whether a 0.5× lens exists on the current camera — front cameras
+    /// generally don't have one.
+    private(set) var hasUltraWide = false
 
     /// Receives every frame on the capture queue, with the frame's
     /// presentation timestamp in milliseconds.
@@ -98,7 +123,20 @@ final class CameraController {
     /// Swaps between the front and back camera, keeping the session running.
     func flipCamera() async {
         let target: AVCaptureDevice.Position = position == .back ? .front : .back
-        guard let device = Self.device(at: target) else { return }
+        // Ultra-wide rarely exists on the front camera, so don't carry the
+        // lens across a flip that can't honour it.
+        let targetLens: Lens = Self.device(at: target, lens: lens) != nil ? lens : .wide
+        await use(position: target, lens: targetLens)
+    }
+
+    /// Switches between 1× and 0.5× on the current camera.
+    func setLens(_ target: Lens) async {
+        guard target != lens else { return }
+        await use(position: position, lens: target)
+    }
+
+    private func use(position target: AVCaptureDevice.Position, lens targetLens: Lens) async {
+        guard let device = Self.device(at: target, lens: targetLens) else { return }
 
         let succeeded = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
             sessionQueue.async { [session, output, videoInput] in
@@ -131,6 +169,8 @@ final class CameraController {
         guard succeeded, let newInput = try? AVCaptureDeviceInput(device: device) else { return }
         videoInput = newInput
         position = target
+        lens = targetLens
+        hasUltraWide = Self.device(at: target, lens: .ultraWide) != nil
         dimensions = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
     }
 
@@ -180,7 +220,20 @@ final class CameraController {
     /// cameras (CMIOExtension tools like SimulatorCamera/SimCam) that let the
     /// Simulator see a Mac webcam. Those never report as
     /// `.builtInWideAngleCamera`, so looking up that type alone would miss them.
-    private static func device(at position: AVCaptureDevice.Position) -> AVCaptureDevice? {
+    private static func device(
+        at position: AVCaptureDevice.Position,
+        lens: Lens = .wide
+    ) -> AVCaptureDevice? {
+        // Ultra-wide is optional hardware — never fall back to another lens for
+        // it, or asking for 0.5× would silently hand back the 1× camera.
+        if lens == .ultraWide {
+            return AVCaptureDevice.DiscoverySession(
+                deviceTypes: [.builtInUltraWideCamera],
+                mediaType: .video,
+                position: position
+            ).devices.first
+        }
+
         if let match = AVCaptureDevice.default(
             .builtInWideAngleCamera, for: .video, position: position
         ) {
@@ -215,9 +268,10 @@ final class CameraController {
     private func configureIfNeeded() async throws {
         guard !isConfigured else { return }
 
-        guard let device = Self.device(at: position) else {
+        guard let device = Self.device(at: position, lens: lens) else {
             throw CameraError.noCaptureDevice
         }
+        hasUltraWide = Self.device(at: position, lens: .ultraWide) != nil
         let input = try AVCaptureDeviceInput(device: device)
 
         // Frames go to the recorder and then out to whoever is listening.

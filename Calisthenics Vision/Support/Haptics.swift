@@ -32,6 +32,18 @@ enum Haptics {
         notice.prepare()
     }
 
+    /// Each countdown beat, so you can look away from the phone and still
+    /// know when the set begins.
+    static func countdownTick() {
+        let light = UIImpactFeedbackGenerator(style: .light)
+        light.impactOccurred()
+    }
+
+    static func sessionStart() {
+        let heavy = UIImpactFeedbackGenerator(style: .heavy)
+        heavy.impactOccurred()
+    }
+
     static func sessionComplete() {
         notice.notificationOccurred(.success)
     }
