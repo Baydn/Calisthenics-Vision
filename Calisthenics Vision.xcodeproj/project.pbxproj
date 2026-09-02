@@ -6,8 +6,15 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		BED33B0271C6F1E926EEFFE1 /* Pods_Calisthenics_Vision.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AFE61A1591AE32C61F7DE279 /* Pods_Calisthenics_Vision.framework */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		1ADF1BB130465380007C5145 /* Calisthenics Vision.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Calisthenics Vision.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		ABB44A3EAC5A72FEA9CF1205 /* Pods-Calisthenics Vision.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Calisthenics Vision.release.xcconfig"; path = "Target Support Files/Pods-Calisthenics Vision/Pods-Calisthenics Vision.release.xcconfig"; sourceTree = "<group>"; };
+		AFE61A1591AE32C61F7DE279 /* Pods_Calisthenics_Vision.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Calisthenics_Vision.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		F0EB997DDEDB75248B55B24E /* Pods-Calisthenics Vision.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Calisthenics Vision.debug.xcconfig"; path = "Target Support Files/Pods-Calisthenics Vision/Pods-Calisthenics Vision.debug.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -23,6 +30,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BED33B0271C6F1E926EEFFE1 /* Pods_Calisthenics_Vision.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -34,6 +42,8 @@
 			children = (
 				1ADF1BB330465380007C5145 /* Calisthenics Vision */,
 				1ADF1BB230465380007C5145 /* Products */,
+				8463499DFA629F60826D67EA /* Pods */,
+				BB0C0671887FEE820B8967C2 /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -45,6 +55,23 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		8463499DFA629F60826D67EA /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				F0EB997DDEDB75248B55B24E /* Pods-Calisthenics Vision.debug.xcconfig */,
+				ABB44A3EAC5A72FEA9CF1205 /* Pods-Calisthenics Vision.release.xcconfig */,
+			);
+			path = Pods;
+			sourceTree = "<group>";
+		};
+		BB0C0671887FEE820B8967C2 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				AFE61A1591AE32C61F7DE279 /* Pods_Calisthenics_Vision.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -52,6 +79,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 1ADF1BBC30465382007C5145 /* Build configuration list for PBXNativeTarget "Calisthenics Vision" */;
 			buildPhases = (
+				BF8B66D41AC3C9A3F25A96E0 /* [CP] Check Pods Manifest.lock */,
 				1ADF1BAD30465380007C5145 /* Sources */,
 				1ADF1BAE30465380007C5145 /* Frameworks */,
 				1ADF1BAF30465380007C5145 /* Resources */,
@@ -64,8 +92,6 @@
 				1ADF1BB330465380007C5145 /* Calisthenics Vision */,
 			);
 			name = "Calisthenics Vision";
-			packageProductDependencies = (
-			);
 			productName = "Calisthenics Vision";
 			productReference = 1ADF1BB130465380007C5145 /* Calisthenics Vision.app */;
 			productType = "com.apple.product-type.application";
@@ -113,6 +139,31 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		BF8B66D41AC3C9A3F25A96E0 /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-Calisthenics Vision-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		1ADF1BAD30465380007C5145 /* Sources */ = {
@@ -246,6 +297,7 @@
 		};
 		1ADF1BBD30465382007C5145 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = F0EB997DDEDB75248B55B24E /* Pods-Calisthenics Vision.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -277,6 +329,7 @@
 		};
 		1ADF1BBE30465382007C5145 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = ABB44A3EAC5A72FEA9CF1205 /* Pods-Calisthenics Vision.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;

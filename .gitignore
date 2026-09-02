@@ -13,6 +13,7 @@ DerivedData/
 # macOS
 .DS_Store
 
-# CocoaPods / SPM (uncomment if you add them later)
-# Pods/
-# .swiftpm/
+# CocoaPods
+# `Pods/` is ~1.2 GB — regenerate it with `pod install`.
+# Podfile and Podfile.lock ARE tracked so installs are reproducible.
+Pods/
