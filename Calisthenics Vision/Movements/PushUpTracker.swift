@@ -2,14 +2,16 @@
 //  PushUpTracker.swift
 //  Calisthenics Vision
 //
-//  Push-up rep counting (SPEC.md §2).
+//  Push-up rep counting. Measurement rules: POSE.md.
 //
-//  State machine: TOP (elbow ≥160°) → BOTTOM (≤90°) → TOP counts one rep.
-//  A rep only counts on the way back up through lockout, so descending
-//  halfway and giving up never scores.
+//  State machine: TOP -> BOTTOM -> TOP counts one rep. A rep only counts on
+//  the way back up through lockout, so descending halfway and giving up never
+//  scores. The gates are fractions into the person's own observed elbow range
+//  (POSE.md Law 3), never fixed angles.
 //
-//  Hip sag: if the shoulder-hip-ankle line bends more than 15° off straight,
-//  form is flagged.
+//  Hip sag is flagged when shoulder-hip-ankle bends more than 15 degrees off
+//  straight -- but only while posture is actually measurable (POSE.md Law 5),
+//  and never by withholding the rep count (Law 4).
 //
 
 import CoreGraphics

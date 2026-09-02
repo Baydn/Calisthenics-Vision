@@ -3,7 +3,11 @@
 //  Calisthenics Vision
 //
 //  MediaPipe's 33-point pose topology, plus the joint-angle math the movement
-//  state machines are built on (SPEC.md §"Math & State Engine").
+//  state machines are built on.
+//
+//  POSE.md is the normative spec for this file: coordinate spaces, the angle
+//  primitive, confidence tiers, and the rules every tracker follows. Read it
+//  before changing anything here.
 //
 
 import CoreGraphics

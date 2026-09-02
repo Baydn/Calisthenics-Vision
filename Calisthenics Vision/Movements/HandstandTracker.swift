@@ -2,7 +2,7 @@
 //  HandstandTracker.swift
 //  Calisthenics Vision
 //
-//  Handstand hold timing (SPEC.md §2).
+//  Handstand hold timing. Measurement rules: POSE.md.
 //
 //  The clock runs whenever you're inverted. Straightness is *measured*, not
 //  required: an early handstand is banana-shaped, and refusing to time it

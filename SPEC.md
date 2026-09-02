@@ -33,17 +33,27 @@ breaks, and log synchronized video telemetry for calisthenics training.
   a prescribed angle.
 
 ### 2. Movement Algorithms
-- **Push-Up Counter** — state machine: `TOP` (≥160°) → `BOTTOM` (≤90°) →
-  `TOP` (lockout). Gated on the torso reading more than ~45° off vertical, so
-  standing and moving your arms — which sweeps the identical elbow range —
-  never counts. A lockout must be observed before the counter arms, so
-  settling into position isn't a free rep. Hip-sag warning if
-  Shoulder-Hip-Ankle strays more than 15°, and only when the ankles are
-  genuinely visible: with the phone close the legs are often cropped, and a
-  confident-sounding warning off a guessed landmark is worse than silence.
-- **Handstand Timer** — inversion detection (wrists below hips/ankles in
-  image space) combined with a line-alignment hold timer across
-  Wrist-Shoulder-Hip-Ankle (≥165°).
+
+**How measurement works is specified in [POSE.md](POSE.md)** — coordinate
+spaces, the angle primitive, confidence tiers, calibration, and the rules a
+new tracker must follow. That document is normative; this section only says
+what each movement does.
+
+- **Push-Up Counter** — `TOP → BOTTOM → TOP` state machine on the elbow
+  angle, where the gates are placed as fractions into *that person's own*
+  observed range rather than at fixed angles (POSE.md Law 3). Gated on the
+  torso reading more than ~45° off vertical, so standing and moving your arms
+  — which sweeps the identical elbow range — never counts. A lockout must be
+  observed before the counter arms, so settling into position isn't a free
+  rep. Hip-sag warning if Shoulder-Hip-Ankle strays more than 15°, and only
+  when the body isn't end-on to the camera and the ankles are genuinely
+  visible (POSE.md Law 5).
+- **Handstand Timer** — the clock runs whenever the body is inverted, judged
+  from world-space joint heights, with tucked and piked handstands counting.
+  Straightness is **scored, never required** (POSE.md Law 4): line quality is
+  a continuous 0…1 statistic surfaced live and in review, taken from the
+  worst joint rather than the average. Only a sustained, severe deviation is
+  called out, and even then the clock keeps running.
 
 ### 3. Post-Workout Telemetry & Video Review
 - Split-view screen: local MP4 player with a toggleable MediaPipe skeleton
