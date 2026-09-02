@@ -99,6 +99,23 @@ enum SessionStore {
         return expired.count
     }
 
+    #if DEBUG
+    /// Wipes every session and its media — used by the developer panel to
+    /// simulate a fresh install without deleting and reinstalling the app.
+    @discardableResult
+    static func deleteAll(context: ModelContext) -> Int {
+        guard let all = try? context.fetch(FetchDescriptor<WorkoutSession>()) else { return 0 }
+        for session in all {
+            MediaLibrary.deleteMedia(for: session)
+            context.delete(session)
+        }
+        try? context.save()
+        // Sweep anything left behind by a crash mid-recording.
+        MediaLibrary.removeOrphans(keeping: [])
+        return all.count
+    }
+    #endif
+
     static func delete(_ session: WorkoutSession, context: ModelContext) {
         MediaLibrary.deleteMedia(for: session)
         context.delete(session)

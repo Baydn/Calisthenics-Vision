@@ -10,6 +10,9 @@ import SwiftUI
 struct ProfileView: View {
     @Environment(Entitlements.self) private var entitlements
     @State private var showPaywall = false
+    #if DEBUG
+    @State private var showDeveloper = false
+    #endif
 
     var body: some View {
         ScrollView {
@@ -26,6 +29,31 @@ struct ProfileView: View {
                 }
 
                 settingsRows
+
+                #if DEBUG
+                // Debug builds get a way into states that are otherwise hard
+                // to reach — the paid tier, and a fresh install.
+                Button { showDeveloper = true } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "hammer.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Developer")
+                            .font(.system(size: 17, weight: .regular))
+                        Spacer()
+                        Text(entitlements.tier.displayName.uppercased())
+                            .font(Theme.Font.cardLabel())
+                            .tracking(Theme.Metric.labelTracking)
+                            .foregroundStyle(Theme.Color.secondaryText)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(Theme.Color.secondaryText)
+                    }
+                    .foregroundStyle(Theme.Color.warning)
+                    .frame(height: 56)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                #endif
 
                 Button {
                     // Wired once auth lands (SPEC.md §Future Roadmap).
@@ -44,6 +72,9 @@ struct ProfileView: View {
         .scrollIndicators(.hidden)
         .background(Theme.Color.background)
         .sheet(isPresented: $showPaywall) { PaywallView() }
+        #if DEBUG
+        .sheet(isPresented: $showDeveloper) { DeveloperSettingsView() }
+        #endif
     }
 
     // MARK: - Pieces
