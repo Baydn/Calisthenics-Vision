@@ -30,6 +30,9 @@ final class WorkoutSession {
     /// because the container path changes.
     var videoFileName: String?
     var telemetryFileName: String?
+    /// Capture-clock timestamp of the video's first frame, in milliseconds.
+    /// Review needs it to turn a playback position into a telemetry lookup.
+    var videoStartMs: Int?
 
     init(
         id: UUID = UUID(),
@@ -39,7 +42,8 @@ final class WorkoutSession {
         repCount: Int = 0,
         formBreaks: Int = 0,
         videoFileName: String? = nil,
-        telemetryFileName: String? = nil
+        telemetryFileName: String? = nil,
+        videoStartMs: Int? = nil
     ) {
         self.id = id
         self.movement = movement
@@ -49,6 +53,7 @@ final class WorkoutSession {
         self.formBreaks = formBreaks
         self.videoFileName = videoFileName
         self.telemetryFileName = telemetryFileName
+        self.videoStartMs = videoStartMs
     }
 }
 

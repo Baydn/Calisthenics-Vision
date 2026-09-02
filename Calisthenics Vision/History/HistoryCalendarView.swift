@@ -46,7 +46,10 @@ struct HistoryCalendarView: View {
 
                         VStack(spacing: 0) {
                             ForEach(Array(sessionsOnSelectedDay.enumerated()), id: \.element.id) { index, session in
-                                SessionRow(session: session)
+                                NavigationLink(value: session) {
+                                    SessionRow(session: session)
+                                }
+                                .buttonStyle(.plain)
 
                                 if index < sessionsOnSelectedDay.count - 1 {
                                     Rectangle()

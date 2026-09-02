@@ -28,7 +28,10 @@ struct HistoryListView: View {
 
                         VStack(spacing: 0) {
                             ForEach(Array(group.sessions.enumerated()), id: \.element.id) { index, session in
-                                SessionRow(session: session)
+                                NavigationLink(value: session) {
+                                    SessionRow(session: session)
+                                }
+                                .buttonStyle(.plain)
 
                                 if index < group.sessions.count - 1 {
                                     Rectangle()

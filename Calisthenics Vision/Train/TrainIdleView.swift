@@ -172,7 +172,7 @@ struct TrainIdleView: View {
         telemetry = nil
 
         Task {
-            let videoURL = await camera.stopRecording()
+            let recording = await camera.stopRecording()
 
             let session = WorkoutSession(
                 movement: movement,
@@ -180,8 +180,9 @@ struct TrainIdleView: View {
                 duration: duration,
                 repCount: reps,
                 formBreaks: breaks,
-                videoFileName: videoURL?.lastPathComponent,
-                telemetryFileName: telemetryName
+                videoFileName: recording?.url.lastPathComponent,
+                telemetryFileName: telemetryName,
+                videoStartMs: recording?.firstFrameTimestampMs
             )
             modelContext.insert(session)
             try? modelContext.save()

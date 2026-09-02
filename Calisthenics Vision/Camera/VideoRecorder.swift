@@ -25,6 +25,14 @@ nonisolated final class VideoRecorder {
     private(set) var state: State = .idle
     private(set) var outputURL: URL?
 
+    /// Presentation timestamp of the first frame written, in milliseconds.
+    ///
+    /// Video time 0 corresponds to this instant, while telemetry is logged
+    /// against the raw capture clock. Keeping it is what lets the review
+    /// scrubber map a playback position back to the exact logged frame
+    /// (SPEC.md §3) instead of guessing at an offset.
+    private(set) var firstFrameTimestampMs: Int?
+
     private var writer: AVAssetWriter?
     private var videoInput: AVAssetWriterInput?
     private var sessionStarted = false
@@ -69,6 +77,7 @@ nonisolated final class VideoRecorder {
         self.videoInput = input
         self.outputURL = url
         self.sessionStarted = false
+        self.firstFrameTimestampMs = nil
         self.state = .recording
     }
 
@@ -83,6 +92,7 @@ nonisolated final class VideoRecorder {
         // the recording lines up with the telemetry we log for the same frame.
         if !sessionStarted {
             writer.startSession(atSourceTime: sampleBuffer.presentationTimeStamp)
+            firstFrameTimestampMs = Int(sampleBuffer.presentationTimeStamp.seconds * 1000)
             sessionStarted = true
         }
 
@@ -91,8 +101,14 @@ nonisolated final class VideoRecorder {
         }
     }
 
-    /// Finish the file. Returns the finished URL, or nil if nothing was written.
-    func finish() async -> URL? {
+    /// A finished recording and the capture-clock instant it starts at.
+    struct Result {
+        let url: URL
+        let firstFrameTimestampMs: Int?
+    }
+
+    /// Finish the file. Returns the finished recording, or nil if nothing was written.
+    func finish() async -> Result? {
         guard state == .recording, let writer, let videoInput else { return nil }
         state = .finishing
 
@@ -100,13 +116,15 @@ nonisolated final class VideoRecorder {
         await writer.finishWriting()
 
         let url = writer.status == .completed ? outputURL : nil
+        let startMs = firstFrameTimestampMs
 
         self.writer = nil
         self.videoInput = nil
         self.outputURL = nil
         self.sessionStarted = false
+        self.firstFrameTimestampMs = nil
         self.state = .idle
 
-        return url
+        return url.map { Result(url: $0, firstFrameTimestampMs: startMs) }
     }
 }

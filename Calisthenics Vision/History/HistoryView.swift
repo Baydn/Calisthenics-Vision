@@ -24,6 +24,7 @@ struct HistoryView: View {
     private var stats: SessionStats { SessionStore.stats(for: sessions) }
 
     var body: some View {
+        NavigationStack {
         VStack(spacing: 0) {
             VStack(spacing: 18) {
                 ScreenHeader(title: "History")
@@ -61,6 +62,10 @@ struct HistoryView: View {
         .padding(.bottom, Theme.Metric.tabBarHeight)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.Color.background)
+        .navigationDestination(for: WorkoutSession.self) { session in
+            SessionReviewView(session: session)
+        }
+        }
     }
 
     private var emptyState: some View {

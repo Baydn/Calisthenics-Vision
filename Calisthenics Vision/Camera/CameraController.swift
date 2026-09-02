@@ -189,13 +189,13 @@ final class CameraController {
     /// Hops onto the capture queue first: the recorder is only safe to touch
     /// there, since that's where frames are appended.
     @discardableResult
-    func stopRecording() async -> URL? {
+    func stopRecording() async -> VideoRecorder.Result? {
         isRecording = false
-        return await withCheckedContinuation { (continuation: CheckedContinuation<URL?, Never>) in
+        return await withCheckedContinuation { (continuation: CheckedContinuation<VideoRecorder.Result?, Never>) in
             captureQueue.async { [recorder] in
                 Task {
-                    let url = await recorder.finish()
-                    continuation.resume(returning: url)
+                    let result = await recorder.finish()
+                    continuation.resume(returning: result)
                 }
             }
         }
