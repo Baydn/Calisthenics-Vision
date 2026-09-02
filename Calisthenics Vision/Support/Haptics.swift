@@ -54,6 +54,15 @@ enum Haptics {
         soft.impactOccurred(intensity: 0.5)
     }
 
+    /// One hold in a set has ended and been recorded. Distinct from the
+    /// per-second tick so you can tell "that attempt is banked" from
+    /// "still going" without looking.
+    static func holdCompleted() {
+        guard isEnabled else { return }
+        let medium = UIImpactFeedbackGenerator(style: .medium)
+        medium.impactOccurred()
+    }
+
     static func sessionStart() {
         guard isEnabled else { return }
         let heavy = UIImpactFeedbackGenerator(style: .heavy)

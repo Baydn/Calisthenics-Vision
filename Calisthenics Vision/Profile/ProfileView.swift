@@ -62,7 +62,7 @@ struct ProfileView: View {
             }
             .padding(.horizontal, Theme.Metric.screenPadding)
             .padding(.top, 8)
-            .padding(.bottom, Theme.Metric.tabBarHeight + 24)
+            .padding(.bottom, Theme.Metric.tabBarClearance + 24)
         }
         .scrollIndicators(.hidden)
         .background(Theme.Color.background)

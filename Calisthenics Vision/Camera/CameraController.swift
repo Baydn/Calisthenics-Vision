@@ -64,6 +64,11 @@ final class CameraController {
     /// generally don't have one.
     private(set) var hasUltraWide = false
 
+    /// Rotation the preview layer should apply, in degrees clockwise.
+    /// Published so `CameraPreviewView` can follow the device without
+    /// duplicating the orientation bookkeeping.
+    private(set) var previewRotationAngle: CGFloat = 90
+
     /// Receives every frame on the capture queue, with the frame's
     /// presentation timestamp in milliseconds.
     func setFrameHandler(_ handler: (@Sendable (CMSampleBuffer, Int) -> Void)?) {
@@ -82,6 +87,12 @@ final class CameraController {
     @ObservationIgnored private var dimensions = CMVideoDimensions(width: 1920, height: 1080)
     @ObservationIgnored private var videoInput: AVCaptureDeviceInput?
     @ObservationIgnored private var isConfigured = false
+
+    /// Tracks which way is up so the app can be used in landscape — filming a
+    /// planche or a side-on push-up is a landscape job, and a portrait-locked
+    /// capture would letterbox the one axis the movement happens along.
+    @ObservationIgnored private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
+    @ObservationIgnored private var rotationObservations: [NSKeyValueObservation] = []
 
     /// Exposed so the preview layer can attach to the same session.
     var captureSession: AVCaptureSession { session }
@@ -160,6 +171,7 @@ final class CameraController {
     private func use(position target: AVCaptureDevice.Position, lens targetLens: Lens) async {
         guard let device = Self.device(at: target, lens: targetLens) else { return }
 
+        let rotationAngle = captureRotationAngle
         let succeeded = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
             sessionQueue.async { [session, output, videoInput] in
                 guard let newInput = try? AVCaptureDeviceInput(device: device) else {
@@ -181,7 +193,11 @@ final class CameraController {
                 }
 
                 session.addInput(newInput)
-                Self.configureConnection(output.connection(with: .video), position: target)
+                Self.configureConnection(
+                    output.connection(with: .video),
+                    position: target,
+                    rotationAngle: rotationAngle
+                )
                 session.commitConfiguration()
 
                 continuation.resume(returning: true)
@@ -194,6 +210,7 @@ final class CameraController {
         lens = targetLens
         hasUltraWide = Self.device(at: target, lens: .ultraWide) != nil
         dimensions = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
+        observeRotation(for: device)
     }
 
     // MARK: - Recording
@@ -270,21 +287,72 @@ final class CameraController {
         return discovery.devices.first ?? AVCaptureDevice.default(for: .video)
     }
 
-    /// Portrait orientation, plus mirroring for the front camera so the
-    /// preview matches what a mirror would show.
+    /// Mirroring for the front camera so the preview matches what a mirror
+    /// would show, plus the current rotation.
     private static func configureConnection(
         _ connection: AVCaptureConnection?,
-        position: AVCaptureDevice.Position
+        position: AVCaptureDevice.Position,
+        rotationAngle: CGFloat
     ) {
         guard let connection else { return }
 
-        if connection.isVideoRotationAngleSupported(90) {
-            connection.videoRotationAngle = 90
+        if connection.isVideoRotationAngleSupported(rotationAngle) {
+            connection.videoRotationAngle = rotationAngle
         }
         if connection.isVideoMirroringSupported {
             connection.automaticallyAdjustsVideoMirroring = false
             connection.isVideoMirrored = (position == .front)
         }
+    }
+
+    // MARK: - Rotation
+
+    /// Follows the device with `AVCaptureDevice.RotationCoordinator`, which
+    /// reports the angle that keeps the horizon level — rather than mapping
+    /// interface orientations by hand, which is the part everyone gets wrong.
+    private func observeRotation(for device: AVCaptureDevice) {
+        rotationObservations.removeAll()
+        let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
+        rotationCoordinator = coordinator
+
+        applyRotation(
+            capture: coordinator.videoRotationAngleForHorizonLevelCapture,
+            preview: coordinator.videoRotationAngleForHorizonLevelPreview
+        )
+
+        rotationObservations = [
+            coordinator.observe(\.videoRotationAngleForHorizonLevelCapture, options: [.new]) {
+                [weak self] coordinator, _ in
+                Task { @MainActor [weak self] in
+                    self?.applyRotation(
+                        capture: coordinator.videoRotationAngleForHorizonLevelCapture,
+                        preview: coordinator.videoRotationAngleForHorizonLevelPreview
+                    )
+                }
+            }
+        ]
+    }
+
+    private func applyRotation(capture: CGFloat, preview: CGFloat) {
+        // An asset writer's dimensions are fixed once the first frame lands,
+        // so rotating mid-take would produce frames the writer can't accept.
+        // Hold the angle for the duration of the recording instead.
+        guard !isRecording else { return }
+
+        previewRotationAngle = preview
+        let position = position
+        sessionQueue.async { [output] in
+            Self.configureConnection(
+                output.connection(with: .video),
+                position: position,
+                rotationAngle: capture
+            )
+        }
+    }
+
+    /// The angle currently applied to captured frames.
+    private var captureRotationAngle: CGFloat {
+        rotationCoordinator?.videoRotationAngleForHorizonLevelCapture ?? 90
     }
 
     private func configureIfNeeded() async throws {
@@ -317,6 +385,7 @@ final class CameraController {
         output.alwaysDiscardsLateVideoFrames = true
 
         let position = position
+        let rotationAngle = captureRotationAngle
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             sessionQueue.async { [session, output] in
                 session.beginConfiguration()
@@ -333,7 +402,11 @@ final class CameraController {
                 }
                 session.addInput(input)
                 session.addOutput(output)
-                Self.configureConnection(output.connection(with: .video), position: position)
+                Self.configureConnection(
+                    output.connection(with: .video),
+                    position: position,
+                    rotationAngle: rotationAngle
+                )
 
                 session.commitConfiguration()
                 continuation.resume()
@@ -342,6 +415,7 @@ final class CameraController {
 
         videoInput = input
         dimensions = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
+        observeRotation(for: device)
         isConfigured = true
     }
 }

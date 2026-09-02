@@ -23,11 +23,10 @@ struct TrainIdleView: View {
     }
 
     @Environment(Entitlements.self) private var entitlements
+    @Environment(CaptureStack.self) private var capture
     @Environment(\.modelContext) private var modelContext
 
-    @State private var camera = CameraController()
     @State private var settings = AppSettings.shared
-    @State private var poseSession = PoseSession()
     /// The tracker for the selected movement, or nil where none exists yet.
     @State private var tracker: (any MovementTracker)? = PushUpTracker()
     @State private var progress = MovementProgress()
@@ -48,24 +47,28 @@ struct TrainIdleView: View {
     /// Quick-pick movements; the rest live behind "+ Library".
     private let quickPicks: [Movement] = [.pushUps, .handstand, .lSit]
 
-    private let ticker = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
+    /// 20 Hz, so the hundredths on the elapsed clock actually move. The hold
+    /// clock is driven by pose frames instead and updates with them.
+    private let ticker = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
+
+    private var camera: CameraController { capture.camera }
+    private var poseSession: PoseSession { capture.pose }
 
     var body: some View {
         ZStack {
             cameraLayer
 
-            VStack(spacing: 0) {
-                topBar
-                    .padding(.top, 8)
-
-                Spacer()
-
-                centrepiece
-
-                Spacer()
-
-                recordButton
-                    .padding(.bottom, Theme.Metric.tabBarHeight + 8)
+            // Landscape isn't just a stretched portrait here: filming a
+            // planche or a side-on push-up wants the long axis of the frame
+            // along the body, and a record button at the bottom would sit
+            // under the tab bar. Controls move to the trailing edge instead,
+            // the way a camera app does it.
+            GeometryReader { proxy in
+                let isLandscape = proxy.size.width > proxy.size.height
+                Group {
+                    if isLandscape { landscapeControls } else { portraitControls }
+                }
+                .frame(width: proxy.size.width, height: proxy.size.height)
             }
 
             if case .countdown(let value) = phase {
@@ -74,13 +77,10 @@ struct TrainIdleView: View {
         }
         .task {
             poseSession.onPose = handlePose
-            await camera.start(
+            capture.activate(
                 position: settings.cameraPosition,
                 preferUltraWide: settings.prefersUltraWide
             )
-            if case .running = camera.status {
-                poseSession.attach(to: camera)
-            }
             // A workout is minutes of not touching the phone. Letting the
             // screen dim mid-set would be the single most annoying bug here.
             UIApplication.shared.isIdleTimerDisabled = settings.keepsScreenAwake
@@ -89,8 +89,8 @@ struct TrainIdleView: View {
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
             countdownTask?.cancel()
-            poseSession.detach()
-            camera.stop()
+            poseSession.onPose = nil
+            capture.suspend()
         }
         .onReceive(ticker) { _ in
             if phase == .recording, let startedAt {
@@ -101,6 +101,53 @@ struct TrainIdleView: View {
             MovementLibraryView(selected: $selected)
         }
         .sheet(isPresented: $showPaywall) { PaywallView() }
+    }
+
+    private var portraitControls: some View {
+        VStack(spacing: 0) {
+            topBar
+                .padding(.top, 8)
+
+            Spacer()
+
+            centrepiece
+
+            Spacer()
+
+            recordButton
+                .padding(.bottom, Theme.Metric.tabBarClearance + 8)
+        }
+    }
+
+    private var landscapeControls: some View {
+        ZStack {
+            centrepiece
+                .padding(.trailing, 96)     // clear of the control column
+
+            VStack(spacing: 0) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if phase == .idle { movementPicker }
+                        performanceReadout
+                            .padding(.horizontal, 16)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.top, 8)
+                Spacer(minLength: 0)
+            }
+
+            HStack {
+                Spacer()
+                VStack(spacing: 12) {
+                    flipCameraButton
+                    lensButton
+                    recordButton
+                        .scaleEffect(0.78)
+                }
+                .padding(.trailing, 18)
+            }
+        }
     }
 
     // MARK: - Pose handling
@@ -125,6 +172,10 @@ struct TrainIdleView: View {
             // A quiet pulse each second, so a hold can be timed without
             // looking at the screen — which is the whole point upside down.
             Haptics.holdTick()
+        case .holdCompleted:
+            // A firmer tap: that attempt is banked and the next one starts
+            // from zero.
+            Haptics.holdCompleted()
         case .formBreak(let issue):
             if phase == .recording { formBreakTimestamps.append(timestampMs) }
             lastEvent = issue
@@ -186,6 +237,14 @@ struct TrainIdleView: View {
         guard phase == .recording else { return }
         phase = .saving
 
+        // Close any hold still running. Stopping the recording while you're
+        // still inverted shouldn't throw away the attempt in progress.
+        if var current = tracker {
+            current.finish()
+            tracker = current
+            progress = current.progress
+        }
+
         let movement = selected
         let started = startedAt ?? Date()
         let duration = Date().timeIntervalSince(started)
@@ -194,6 +253,7 @@ struct TrainIdleView: View {
         // For a timed movement the meaningful number is validated hold time,
         // not how long the recording ran.
         let holdSeconds = tracker?.progress.holdDuration ?? 0
+        let holds = tracker?.progress.holds ?? []
         let quality = tracker?.progress.formQuality
         let telemetryName = telemetry?.fileName
         let repMarks = repTimestamps
@@ -216,7 +276,12 @@ struct TrainIdleView: View {
                 videoStartMs: recording?.firstFrameTimestampMs,
                 repTimestampsMs: repMarks,
                 formBreakTimestampsMs: breakMarks,
-                formQuality: quality
+                formQuality: quality,
+                holdDurationsSec: holds.map(\.duration),
+                holdStartsMs: holds.map(\.startTimestampMs),
+                // -1 stands in for "not measurable", since the stored array
+                // has to be plain doubles.
+                holdQualities: holds.map { $0.quality ?? -1 }
             )
             modelContext.insert(session)
             try? modelContext.save()
@@ -248,7 +313,10 @@ struct TrainIdleView: View {
     private var cameraLayer: some View {
         if case .running = camera.status {
             ZStack {
-                CameraPreviewView(session: camera.captureSession)
+                CameraPreviewView(
+                    session: camera.captureSession,
+                    rotationAngle: camera.previewRotationAngle
+                )
                 PoseOverlayView(pose: poseSession.pose, isFormValid: progress.isFormValid)
             }
             .ignoresSafeArea()
@@ -366,34 +434,16 @@ struct TrainIdleView: View {
     private var repCounter: some View {
         VStack(spacing: 12) {
             if phase == .recording {
-                Text(SessionResult.durationLabel(elapsed))
+                Text(SessionResult.preciseDurationLabel(elapsed))
                     .font(.system(size: 17, weight: .semibold, design: .monospaced))
+                    .monospacedDigit()
                     .foregroundStyle(Theme.Color.primaryText.opacity(0.85))
             }
 
             if tracker == nil {
                 unsupportedNotice
             } else if selected.isTimedHold {
-                // A hold is measured in validated seconds, not wall time — the
-                // clock stops whenever the position breaks.
-                VStack(spacing: 6) {
-                    Text(SessionResult.durationLabel(progress.holdDuration))
-                        .font(Theme.Font.hudCounter())
-                        .monospacedDigit()
-                        .foregroundStyle(Theme.Color.primaryText)
-                        .shadow(color: .black.opacity(0.5), radius: 8)
-
-                    // Straightness is feedback, never a gate — the clock above
-                    // runs regardless of what this says.
-                    if let quality = progress.formQuality {
-                        Text("LINE \(Int((quality * 100).rounded()))%")
-                            .font(.system(size: 13, weight: .bold, design: .monospaced))
-                            .tracking(Theme.Metric.labelTracking)
-                            .foregroundStyle(quality > 0.75
-                                             ? Theme.Color.valid : Theme.Color.secondaryText)
-                            .shadow(color: .black.opacity(0.5), radius: 6)
-                    }
-                }
+                holdReadout
             } else {
                 Text("\(progress.reps)")
                     .font(Theme.Font.hudCounter())
@@ -414,6 +464,63 @@ struct TrainIdleView: View {
             }
         }
         .animation(.snappy(duration: 0.2), value: lastEvent)
+    }
+
+    /// The clock for the attempt under way, plus how the set is going.
+    ///
+    /// A hold is measured in validated seconds, not wall time, and a set is
+    /// several attempts rather than one — the big number is the hold you're
+    /// in right now, and it resets each time you come down.
+    private var holdReadout: some View {
+        VStack(spacing: 6) {
+            // Hundredths, because whole seconds make a running clock look
+            // frozen — the digits moving are what say "this is counting".
+            Text(SessionResult.preciseDurationLabel(holdClock))
+                .font(Theme.Font.hudCounter())
+                .monospacedDigit()
+                .foregroundStyle(isHolding
+                                 ? Theme.Color.primaryText
+                                 : Theme.Color.primaryText.opacity(0.55))
+                .shadow(color: .black.opacity(0.5), radius: 8)
+
+            Text(holdSetSummary)
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .tracking(Theme.Metric.labelTracking)
+                .foregroundStyle(Theme.Color.secondaryText)
+                .shadow(color: .black.opacity(0.5), radius: 6)
+
+            // Straightness is feedback, never a gate — the clock above runs
+            // regardless of what this says.
+            if let quality = progress.formQuality {
+                Text("LINE \(Int((quality * 100).rounded()))%")
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    .tracking(Theme.Metric.labelTracking)
+                    .foregroundStyle(quality > 0.75
+                                     ? Theme.Color.valid : Theme.Color.secondaryText)
+                    .shadow(color: .black.opacity(0.5), radius: 6)
+            }
+        }
+    }
+
+    private var isHolding: Bool { progress.currentHold > 0 }
+
+    /// The running attempt, or the last one finished so you can read what you
+    /// just did instead of watching it snap back to zero.
+    private var holdClock: TimeInterval {
+        isHolding ? progress.currentHold : (progress.holds.last?.duration ?? 0)
+    }
+
+    private var holdSetSummary: String {
+        let completed = progress.holds.count
+        guard completed > 0 || isHolding else { return "GET INVERTED TO START" }
+
+        let number = completed + (isHolding ? 1 : 0)
+        var parts = ["HOLD \(number)"]
+        if completed > 0 {
+            parts.append("BEST \(SessionResult.durationLabel(progress.bestHold))")
+            parts.append("TOTAL \(SessionResult.durationLabel(progress.holdDuration))")
+        }
+        return parts.joined(separator: " · ")
     }
 
     /// Shown for movements that are selectable but have no state machine yet.

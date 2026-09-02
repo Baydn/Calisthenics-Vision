@@ -69,8 +69,10 @@ struct HistoryProgressView: View {
 
         return byDay.keys.sorted().suffix(10).map { day in
             let items = byDay[day] ?? []
+            // Best single hold, not the day's total — the trend is about
+            // whether the hold is getting longer, not how much you did.
             let value = measuresHold
-                ? (items.map(\.duration).max() ?? 0)
+                ? (items.map(\.bestHold).max() ?? 0)
                 : Double(items.reduce(0) { $0 + $1.repCount })
 
             return TrendPoint(

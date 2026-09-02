@@ -31,6 +31,15 @@ breaks, and log synchronized video telemetry for calisthenics training.
   get right first. The only requirement is that most of the body is visible.
   Onboarding therefore checks *framing* (is your whole body in shot?), never
   a prescribed angle.
+- **Portrait or landscape.** Push-ups and handstands frame naturally upright;
+  a planche or a side-on push-up wants the long axis of the frame along the
+  body. Capture rotation follows the device via
+  `AVCaptureDevice.RotationCoordinator`, and the HUD moves its controls to the
+  trailing edge in landscape rather than stretching the portrait layout.
+  Rotation is held for the duration of a recording, since an asset writer's
+  dimensions are fixed once the first frame lands.
+- **Live timers show hundredths.** Whole seconds make a running clock look
+  frozen between ticks, which reads as the app having stopped counting.
 
 ### 2. Movement Algorithms
 
@@ -54,6 +63,10 @@ what each movement does.
   a continuous 0…1 statistic surfaced live and in review, taken from the
   worst joint rather than the average. Only a sustained, severe deviation is
   called out, and even then the clock keeps running.
+  A session is a **set of holds**, not one hold: coming down ends the attempt
+  and going back up starts a new one, each timed and scored separately, so a
+  whole session of attempts can be recorded in one take. The set is judged on
+  its best single hold.
 
 ### 3. Post-Workout Telemetry & Video Review
 - Split-view screen: local MP4 player with a toggleable MediaPipe skeleton

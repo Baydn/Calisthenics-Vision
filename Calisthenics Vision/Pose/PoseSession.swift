@@ -48,7 +48,7 @@ final class PoseSession {
     /// - Returns: an error description if the landmarker couldn't be created.
     @discardableResult
     func attach(to source: FrameSource) -> String? {
-        detach()
+        pause()
 
         engine.onResult = { [weak self] result, timestampMs in
             Task { @MainActor [weak self] in
@@ -56,7 +56,10 @@ final class PoseSession {
             }
         }
 
-        if let error = engine.prepare() {
+        // Only build the landmarker once. Rebuilding a MediaPipe GPU graph
+        // every time the Train tab reappears is expensive and needless — the
+        // engine survives suspension precisely so it doesn't have to.
+        if let error = engine.prepareIfNeeded() {
             setupError = error
             return error
         }
@@ -69,15 +72,24 @@ final class PoseSession {
         return nil
     }
 
-    /// Stops detecting. Does not stop the underlying source.
-    func detach() {
+    /// Stops detecting but keeps the landmarker loaded, ready to resume.
+    ///
+    /// This is what leaving the Train tab does. Nothing the capture queue
+    /// touches is released, so a frame already in flight has somewhere safe
+    /// to land.
+    func pause() {
         source?.setFrameHandler(nil)
         source = nil
-        engine.teardown()
         smoother.reset()
         pose = nil
         frameTimes.removeAll()
         processedFPS = 0
+    }
+
+    /// Stops detecting and releases the landmarker.
+    func detach() {
+        pause()
+        engine.teardown()
     }
 
     func stop() { detach() }
@@ -137,13 +149,23 @@ private nonisolated final class PoseInferenceEngine: NSObject,
     private var landmarker: PoseLandmarkerService?
     private var lastTimestampMs = -1
 
+    /// Creates the landmarker if there isn't one already.
+    ///
+    /// `lastTimestampMs` is deliberately *not* reset on a reattach: capture
+    /// timestamps come from the host clock and keep climbing while suspended,
+    /// and MediaPipe's live-stream mode rejects a timestamp that isn't
+    /// strictly increasing.
     /// - Returns: an error description if the landmarker couldn't be created.
-    func prepare() -> String? {
+    func prepareIfNeeded() -> String? {
+        lock.lock()
+        let existing = landmarker != nil
+        lock.unlock()
+        guard !existing else { return nil }
+
         do {
             let service = try PoseLandmarkerService(delegate: self)
             lock.lock()
             landmarker = service
-            lastTimestampMs = -1
             lock.unlock()
             return nil
         } catch {
@@ -160,7 +182,15 @@ private nonisolated final class PoseInferenceEngine: NSObject,
 
     /// Source frame aspect (width ÷ height), needed to undo MediaPipe's
     /// per-axis normalization before any angle is measured.
-    private(set) var sourceAspect: CGFloat = 1
+    ///
+    /// Written from the capture queue and read from the main actor, so it
+    /// goes through the same lock as everything else here.
+    private var _sourceAspect: CGFloat = 1
+    var sourceAspect: CGFloat {
+        lock.lock()
+        defer { lock.unlock() }
+        return _sourceAspect
+    }
 
     /// Called on the capture queue.
     func process(_ sampleBuffer: CMSampleBuffer, timestampMs: Int) {
@@ -179,7 +209,7 @@ private nonisolated final class PoseInferenceEngine: NSObject,
             let height = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
             if height > 0 {
                 lock.lock()
-                sourceAspect = width / height
+                _sourceAspect = width / height
                 lock.unlock()
             }
         }

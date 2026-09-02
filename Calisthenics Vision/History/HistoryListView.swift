@@ -10,11 +10,14 @@ import SwiftUI
 struct HistoryListView: View {
     let sessions: [WorkoutSession]
 
+    /// Newest first, at both levels. Days descend, and so do the sessions
+    /// inside each day — the set you just finished is the first thing you see
+    /// rather than the last row of the "TODAY" group.
     private var grouped: [(day: Date, sessions: [WorkoutSession])] {
         let calendar = Calendar.current
         let buckets = Dictionary(grouping: sessions) { calendar.startOfDay(for: $0.startedAt) }
         return buckets
-            .map { (day: $0.key, sessions: $0.value.sorted { $0.startedAt < $1.startedAt }) }
+            .map { (day: $0.key, sessions: $0.value.sorted { $0.startedAt > $1.startedAt }) }
             .sorted { $0.day > $1.day }
     }
 

@@ -238,6 +238,29 @@ than silently crediting a minute spent out of frame. Never compute a hold as
 
 Whole-second crossings emit `.holdTick(seconds:)` for haptics and audio.
 
+### A hold set is many holds
+
+A session is a *set of attempts*, not one unbroken hold — you come down,
+shake out, and go again. Leaving position closes the attempt; re-entering
+opens a new one, each timed and scored on its own.
+
+Two guards keep that from turning noise into data:
+
+| Guard | Constant | Why |
+|---|---|---|
+| Grace window before an attempt closes | `holdGapToleranceMs` **400 ms** | One dropped frame would otherwise chop a clean hold into fragments |
+| Shortest attempt worth recording | `minimumHoldSeconds` **1.0 s** | A wobble on the way up isn't a hold, and listing it buries the real attempts |
+
+Discarded time is never credited: `holdDuration` sums the *recorded* holds
+plus the one in progress, so a rejected blip contributes nothing.
+
+`finish()` closes whatever is still open. Without it, stopping the recording
+while still inverted would silently discard the attempt in progress.
+
+**The set's headline number is the best single hold, not the total.** Six
+five-second handstands are not a thirty-second handstand, and any personal
+record or trend line that sums them is lying about progress.
+
 ---
 
 ## 9. Hysteresis
@@ -325,7 +348,11 @@ generator produces every camera angle.
 | Frame gap mid-hold | Gap not credited |
 | Reset | Clears calibration, not just totals |
 
-Current coverage: **38 push-up checks, 20 handstand checks**, all passing.
+For a segmented hold additionally: several attempts recorded separately, rest
+between them uncounted, a brief dropout not splitting one hold, a sub-second
+blip discarded along with its time, and finishing mid-hold keeping it.
+
+Current coverage: **38 push-up checks, 39 handstand checks**, all passing.
 
 A fixture that shares a bug with the code proves nothing — the aspect-ratio
 distortion bug passed 14 tests because the fixtures were generated in the
@@ -354,6 +381,8 @@ Every rule above, and the bug that earned it.
 | Review skeleton drawn nowhere near the body | World metres rendered as image fractions | Law 1 |
 | Replay stretched | Writer sized from the sensor's landscape format while the connection was rotated to portrait | — (`VideoRecorder` sizes from the first real frame) |
 | SIGSEGV on the first device build | Main-actor state read from the capture queue | `CLAUDE.md` concurrency invariant |
+| Random crash when switching tabs | The Train screen owned the capture stack, so every tab switch tore down an `AVCaptureSession` and a MediaPipe graph; `AVCaptureVideoDataOutput` doesn't retain its delegate, so a frame landed on freed memory | — (`CaptureStack`, owned above the tab bar) |
+| A set of short holds reported as one long hold | Personal records read the session total rather than the best attempt | §8 |
 
 ---
 
@@ -370,4 +399,5 @@ Change these deliberately; each has a reason above.
 
 **HandstandTracker** — `idealAlignment 180` · `warnDeviation 45` (warn only,
 never a gate) · `minConfidence 0.5` · `framesToFlag 20` · `maxFrameGapMs 500`
-· quality taper `90°` → 0 · inversion separation `0.3 m`
+· `holdGapToleranceMs 400` · `minimumHoldSeconds 1.0` · quality taper `90°` → 0
+· inversion separation `0.3 m`

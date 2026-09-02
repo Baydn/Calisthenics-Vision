@@ -66,7 +66,13 @@ enum Theme {
         static let cardHeight: CGFloat = 66
         static let segmentedHeight: CGFloat = 36
         static let rowIconSize: CGFloat = 28
-        static let tabBarHeight: CGFloat = 88
+        /// The floating tab bar's own height.
+        static let tabBarHeight: CGFloat = 58
+        /// What a screen should reserve at the bottom so its content clears
+        /// the floating bar — the bar plus the gap beneath it. Screens that
+        /// deliberately run underneath the glass (the camera preview) ignore
+        /// this for their background and use it only for controls.
+        static let tabBarClearance: CGFloat = 76
         static let labelTracking: CGFloat = 0.5
     }
 }

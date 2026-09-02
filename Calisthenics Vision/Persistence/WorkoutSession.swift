@@ -44,6 +44,18 @@ final class WorkoutSession {
     /// score form, and for sessions recorded before it was measured.
     var formQuality: Double?
 
+    // Each hold in a set, as three parallel arrays rather than one array of
+    // structs. SwiftData stores arrays of primitives without a custom value
+    // transformer, and a schema this app already ships shouldn't grow a
+    // migration risk for cosmetic tidiness — `holdSegments` below zips them
+    // back into something readable at every call site.
+    /// Duration of each counted hold, in order.
+    var holdDurationsSec: [Double] = []
+    /// Capture-clock instant each hold began, for jumping to it in review.
+    var holdStartsMs: [Int] = []
+    /// Line quality per hold, 0…1, or -1 where it couldn't be measured.
+    var holdQualities: [Double] = []
+
     init(
         id: UUID = UUID(),
         movement: Movement,
@@ -56,7 +68,10 @@ final class WorkoutSession {
         videoStartMs: Int? = nil,
         repTimestampsMs: [Int] = [],
         formBreakTimestampsMs: [Int] = [],
-        formQuality: Double? = nil
+        formQuality: Double? = nil,
+        holdDurationsSec: [Double] = [],
+        holdStartsMs: [Int] = [],
+        holdQualities: [Double] = []
     ) {
         self.id = id
         self.movement = movement
@@ -70,6 +85,9 @@ final class WorkoutSession {
         self.repTimestampsMs = repTimestampsMs
         self.formBreakTimestampsMs = formBreakTimestampsMs
         self.formQuality = formQuality
+        self.holdDurationsSec = holdDurationsSec
+        self.holdStartsMs = holdStartsMs
+        self.holdQualities = holdQualities
     }
 }
 
@@ -80,8 +98,30 @@ extension WorkoutSession {
         formQuality.map { "\(Int(($0 * 100).rounded()))%" }
     }
 
+    /// The individual holds of a set, reassembled from storage.
+    ///
+    /// Tolerates short or missing companion arrays so a session written by an
+    /// older build still reads back rather than trapping on an index.
+    var holdSegments: [HoldSegment] {
+        holdDurationsSec.enumerated().map { index, seconds in
+            let quality = index < holdQualities.count ? holdQualities[index] : -1
+            return HoldSegment(
+                duration: seconds,
+                startTimestampMs: index < holdStartsMs.count ? holdStartsMs[index] : 0,
+                quality: quality >= 0 ? quality : nil
+            )
+        }
+    }
+
+    /// Longest single hold — what a hold set is judged on.
+    var bestHold: TimeInterval { holdDurationsSec.max() ?? duration }
+
     var result: SessionResult {
-        movement.isTimedHold ? .hold(duration) : .reps(repCount)
+        guard movement.isTimedHold else { return .reps(repCount) }
+        // Sessions from before holds were segmented have no breakdown, and a
+        // single-hold set reads better as one number than as "1 hold".
+        guard holdDurationsSec.count > 1 else { return .hold(duration) }
+        return .holdSet(count: holdDurationsSec.count, best: bestHold, total: duration)
     }
 
     var timeLabel: String {

@@ -10,8 +10,11 @@
 //  scored continuously instead and reported afterwards, so you can see what to
 //  work on without being denied credit for the hold.
 //
-//  Time only accrues frame to frame, so losing the pose mid-hold pauses the
-//  clock rather than silently crediting the gap.
+//  A session is a *set of holds*, not one hold. Coming down ends the attempt
+//  and going back up starts a new one, each timed and scored on its own —
+//  which is how holds are actually trained. Time only accrues frame to frame,
+//  so losing the pose mid-hold pauses the clock rather than silently
+//  crediting the gap.
 //
 
 import Foundation
@@ -32,6 +35,14 @@ struct HandstandTracker: MovementTracker {
     /// Gap beyond which we assume tracking was lost rather than time passing.
     var maxFrameGapMs = 500
 
+    /// How long you can be out of position before the hold is treated as
+    /// over. Without this, one dropped frame or a momentary landmark glitch
+    /// would chop a single clean hold into a dozen fragments.
+    var holdGapToleranceMs = 400
+    /// Shortest attempt worth recording. Below this it's a wobble on the way
+    /// up, not a hold, and listing it would bury the real attempts.
+    var minimumHoldSeconds: TimeInterval = 1.0
+
     private(set) var progress = MovementProgress()
 
     private(set) var isInverted = false
@@ -42,10 +53,18 @@ struct HandstandTracker: MovementTracker {
     private var badFormFrames = 0
     private var lastWholeSecond = 0
 
+    /// When the current attempt began, and when we last saw it interrupted.
+    /// A non-nil `outOfPositionSinceMs` means an attempt is open but paused.
+    private var holdStartMs: Int?
+    private var outOfPositionSinceMs: Int?
+
     /// Running mean of line quality, weighted by time rather than frame count
-    /// so a dropped frame doesn't skew the score.
-    private var qualitySum: Double = 0
-    private var qualityWeight: Double = 0
+    /// so a dropped frame doesn't skew the score. Tracked for the attempt
+    /// under way and for the set as a whole.
+    private var holdQualitySum: Double = 0
+    private var holdQualityWeight: Double = 0
+    private var setQualitySum: Double = 0
+    private var setQualityWeight: Double = 0
 
     var diagnostics: TrackerDiagnostics {
         var d = TrackerDiagnostics()
@@ -56,10 +75,15 @@ struct HandstandTracker: MovementTracker {
         d.secondaryAngleLabel = "hip"
         d.secondaryAngle = hipAngle
         if isInverted {
-            d.note = String(format: "holding · line %.0f%%", (progress.formQuality ?? 0) * 100)
+            d.note = String(
+                format: "hold %d · line %.0f%%",
+                progress.holds.count + 1, (progress.formQuality ?? 0) * 100
+            )
         } else {
-            d.note = "waiting for inversion"
-            d.noteIsWarning = true
+            d.note = progress.holds.isEmpty
+                ? "waiting for inversion"
+                : "\(progress.holds.count) held · go again"
+            d.noteIsWarning = progress.holds.isEmpty
         }
         return d
     }
@@ -67,12 +91,13 @@ struct HandstandTracker: MovementTracker {
     mutating func update(pose: Pose?, timestampMs: Int) -> MovementEvent? {
         guard let pose else {
             // Losing the pose pauses the clock: resuming shouldn't credit the
-            // time spent out of frame.
+            // time spent out of frame. The attempt itself stays open until the
+            // grace period runs out, so a brief dropout doesn't split a hold.
             lastTimestampMs = nil
             isInverted = false
             shoulderAngle = nil
             hipAngle = nil
-            return nil
+            return closeHoldIfLapsed(at: timestampMs)
         }
 
         shoulderAngle = alignment(pose, at: .leftShoulder, from: .leftWrist, to: .leftHip,
@@ -88,10 +113,16 @@ struct HandstandTracker: MovementTracker {
             badFormFrames = 0
             if wasInverted && !progress.isFormValid {
                 progress.isFormValid = true
+                // The attempt stays open through the grace window; the next
+                // frame closes it if you're still down.
                 return .formRecovered
             }
-            return nil
+            return closeHoldIfLapsed(at: timestampMs)
         }
+
+        // Back in position within the grace window — the attempt continues.
+        outOfPositionSinceMs = nil
+        if holdStartMs == nil { beginHold(at: timestampMs) }
 
         defer { lastTimestampMs = timestampMs }
 
@@ -101,12 +132,12 @@ struct HandstandTracker: MovementTracker {
         guard delta > 0, delta <= maxFrameGapMs else { return nil }
 
         let seconds = Double(delta) / 1000
-        progress.holdDuration += seconds
+        progress.currentHold += seconds
         recordQuality(over: seconds)
 
         if let event = updateFormState() { return event }
 
-        let whole = Int(progress.holdDuration)
+        let whole = Int(progress.currentHold)
         if whole > lastWholeSecond {
             lastWholeSecond = whole
             return .holdTick(seconds: whole)
@@ -122,8 +153,69 @@ struct HandstandTracker: MovementTracker {
         lastTimestampMs = nil
         badFormFrames = 0
         lastWholeSecond = 0
-        qualitySum = 0
-        qualityWeight = 0
+        holdStartMs = nil
+        outOfPositionSinceMs = nil
+        holdQualitySum = 0
+        holdQualityWeight = 0
+        setQualitySum = 0
+        setQualityWeight = 0
+    }
+
+    /// Ends any attempt still open — call when the set finishes, so the last
+    /// hold isn't lost just because the recording stopped while inverted.
+    mutating func finish() {
+        _ = closeHold()
+    }
+
+    // MARK: - Hold segmentation
+
+    private mutating func beginHold(at timestampMs: Int) {
+        holdStartMs = timestampMs
+        progress.currentHold = 0
+        lastWholeSecond = 0
+        holdQualitySum = 0
+        holdQualityWeight = 0
+    }
+
+    /// Closes the open attempt once you've been out of position longer than
+    /// the grace window.
+    private mutating func closeHoldIfLapsed(at timestampMs: Int) -> MovementEvent? {
+        guard holdStartMs != nil else { return nil }
+
+        guard let since = outOfPositionSinceMs else {
+            outOfPositionSinceMs = timestampMs
+            return nil
+        }
+        guard timestampMs - since >= holdGapToleranceMs else { return nil }
+        return closeHold()
+    }
+
+    /// Files the attempt under way, if it lasted long enough to mean anything.
+    private mutating func closeHold() -> MovementEvent? {
+        guard let start = holdStartMs else { return nil }
+        let duration = progress.currentHold
+
+        holdStartMs = nil
+        outOfPositionSinceMs = nil
+        progress.currentHold = 0
+        lastWholeSecond = 0
+
+        guard duration >= minimumHoldSeconds else {
+            // Too short to be an attempt. Its time never counted toward the
+            // set, since `holdDuration` sums the recorded holds.
+            holdQualitySum = 0
+            holdQualityWeight = 0
+            return nil
+        }
+
+        let quality = holdQualityWeight > 0 ? holdQualitySum / holdQualityWeight : nil
+        holdQualitySum = 0
+        holdQualityWeight = 0
+
+        progress.holds.append(
+            HoldSegment(duration: duration, startTimestampMs: start, quality: quality)
+        )
+        return .holdCompleted(index: progress.holds.count, duration: duration)
     }
 
     // MARK: - Line quality
@@ -146,9 +238,11 @@ struct HandstandTracker: MovementTracker {
 
     private mutating func recordQuality(over seconds: Double) {
         guard let quality = currentQuality else { return }
-        qualitySum += quality * seconds
-        qualityWeight += seconds
-        progress.formQuality = qualityWeight > 0 ? qualitySum / qualityWeight : nil
+        holdQualitySum += quality * seconds
+        holdQualityWeight += seconds
+        setQualitySum += quality * seconds
+        setQualityWeight += seconds
+        progress.formQuality = setQualityWeight > 0 ? setQualitySum / setQualityWeight : nil
     }
 
     /// Flags only a sustained, large deviation — and never stops the clock.
@@ -182,7 +276,7 @@ struct HandstandTracker: MovementTracker {
     /// World-space y runs downward, matching the image, so "above" means a
     /// smaller y. Comparing ankles to shoulders rather than checking wrist
     /// height keeps this true whatever angle the camera is at — the whole
-    /// point of working in 3D (SPEC.md §1).
+    /// point of working in 3D (POSE.md Law 1).
     static func isInverted(_ pose: Pose) -> Bool {
         guard let shoulder = midpoint(pose, .leftShoulder, .rightShoulder),
               let ankle = midpoint(pose, .leftAnkle, .rightAnkle),

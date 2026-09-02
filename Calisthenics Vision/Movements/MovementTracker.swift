@@ -12,10 +12,26 @@ import Foundation
 /// problem. The HUD turns these into haptics, sound, and animation (SPEC.md §5).
 enum MovementEvent: Equatable {
     case repCompleted(total: Int)
-    /// Emitted each time a hold crosses another whole second.
+    /// Emitted each time the hold under way crosses another whole second.
     case holdTick(seconds: Int)
+    /// One hold ended and was long enough to keep. `index` is 1-based, so
+    /// the HUD can say "hold 3" without arithmetic.
+    case holdCompleted(index: Int, duration: TimeInterval)
     case formBreak(FormIssue)
     case formRecovered
+}
+
+/// One continuous hold inside a set.
+///
+/// A handstand session is a set of attempts, not a single unbroken hold —
+/// you come down, shake out, and go again. Each attempt is timed and scored
+/// separately so the set reads the way it was actually performed.
+struct HoldSegment: Equatable {
+    var duration: TimeInterval
+    /// Capture-clock instant the hold began, so review can jump to it.
+    var startTimestampMs: Int
+    /// Mean line quality over this hold alone, 0…1, where measurable.
+    var quality: Double?
 }
 
 enum FormIssue: String, Equatable {
@@ -27,15 +43,29 @@ enum FormIssue: String, Equatable {
 /// Running totals a tracker exposes for the HUD.
 struct MovementProgress: Equatable {
     var reps = 0
-    /// Seconds accumulated in a valid hold, for timed movements.
-    var holdDuration: TimeInterval = 0
+    /// Every hold completed so far in this set, oldest first.
+    var holds: [HoldSegment] = []
+    /// Seconds in the hold currently under way; 0 when not holding.
+    var currentHold: TimeInterval = 0
     var formBreaks = 0
     var isFormValid = true
     /// 0…1 through the current rep, for progress visuals.
     var repProgress: Double = 0
-    /// Mean line quality over a hold, 0…1. Nil where the movement doesn't
-    /// score form, or where nothing measurable has happened yet.
+    /// Mean line quality across the whole set, 0…1. Nil where the movement
+    /// doesn't score form, or where nothing measurable has happened yet.
     var formQuality: Double?
+
+    /// Total counted hold time across the set, including the one in progress.
+    var holdDuration: TimeInterval {
+        holds.reduce(0) { $0 + $1.duration } + currentHold
+    }
+
+    /// The best single hold, which is what a hold set is judged on — a
+    /// two-minute total made of six-second attempts is a different session
+    /// from one unbroken two-minute handstand.
+    var bestHold: TimeInterval {
+        max(holds.map(\.duration).max() ?? 0, currentHold)
+    }
 }
 
 /// What the debug readout shows. Generalized across movements so the HUD
@@ -61,6 +91,15 @@ protocol MovementTracker {
     /// Feed one smoothed pose. Returns any event that just occurred.
     mutating func update(pose: Pose?, timestampMs: Int) -> MovementEvent?
     mutating func reset()
+
+    /// Called when the set ends, to close anything still open — a hold that
+    /// was still running when the recording stopped would otherwise be lost.
+    mutating func finish()
+}
+
+extension MovementTracker {
+    /// Most movements have nothing to settle; only segmented holds override.
+    mutating func finish() {}
 }
 
 extension Movement {

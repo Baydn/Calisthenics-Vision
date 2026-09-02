@@ -41,9 +41,12 @@ enum SessionStore {
             .map(\.repCount)
             .max() ?? 0
 
+        // A session's `duration` is the *total* held across the set, so the
+        // personal record has to come from the best single attempt — six
+        // five-second handstands are not a thirty-second handstand.
         stats.longestHold = sessions
             .filter { $0.movement.isTimedHold }
-            .map(\.duration)
+            .map(\.bestHold)
             .max() ?? 0
 
         stats.dayStreak = dayStreak(for: sessions, calendar: calendar)

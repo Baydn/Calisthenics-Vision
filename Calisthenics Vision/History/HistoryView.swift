@@ -20,19 +20,24 @@ struct HistoryView: View {
     private var sessions: [WorkoutSession]
 
     @State private var tab: HistoryTab = .list
+    /// `.compact` is landscape on iPhone: the stat cards are a nice-to-have,
+    /// and keeping them there would leave the list a couple of rows tall.
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     private var stats: SessionStats { SessionStore.stats(for: sessions) }
 
     var body: some View {
         NavigationStack {
         VStack(spacing: 0) {
-            VStack(spacing: 18) {
+            VStack(spacing: verticalSizeClass == .compact ? 12 : 18) {
                 ScreenHeader(title: "History")
 
-                HStack(spacing: 8) {
-                    StatCard(value: "\(stats.dayStreak)", label: "DAY STREAK")
-                    StatCard(value: "\(stats.repsThisWeek)", label: "REPS THIS WK")
-                    StatCard(value: "\(stats.totalSessions)", label: "SESSIONS")
+                if verticalSizeClass != .compact {
+                    HStack(spacing: 8) {
+                        StatCard(value: "\(stats.dayStreak)", label: "DAY STREAK")
+                        StatCard(value: "\(stats.repsThisWeek)", label: "REPS THIS WK")
+                        StatCard(value: "\(stats.totalSessions)", label: "SESSIONS")
+                    }
                 }
 
                 SegmentedControl(
@@ -55,11 +60,11 @@ struct HistoryView: View {
                     }
                 }
             }
-            .padding(.top, 22)
+            .padding(.top, verticalSizeClass == .compact ? 12 : 22)
 
             Spacer(minLength: 0)
         }
-        .padding(.bottom, Theme.Metric.tabBarHeight)
+        .padding(.bottom, Theme.Metric.tabBarClearance)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.Color.background)
         .navigationDestination(for: WorkoutSession.self) { session in

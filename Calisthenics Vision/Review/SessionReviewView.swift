@@ -19,6 +19,9 @@ struct SessionReviewView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    /// `.compact` means landscape on iPhone, where a fixed-height video stage
+    /// would leave no room for anything underneath it.
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     @State private var player: AVPlayer?
     @State private var reader: TelemetryReader?
@@ -47,25 +50,40 @@ struct SessionReviewView: View {
         )
     }
 
+    enum MarkerKind {
+        case rep, formBreak, holdStart
+
+        var color: SwiftUI.Color {
+            switch self {
+            case .rep:       Theme.Color.valid
+            case .formBreak: Theme.Color.warning
+            case .holdStart: Theme.Color.primaryText
+            }
+        }
+    }
+
     /// Event positions along the timeline, as fractions of the duration.
-    private var markers: [(offset: Int, fraction: CGFloat, isBreak: Bool)] {
+    private var markers: [(offset: Int, fraction: CGFloat, kind: MarkerKind)] {
         guard duration > 0 else { return [] }
-        let base = session.videoStartMs ?? 0
 
-        func fraction(_ timestampMs: Int) -> CGFloat? {
-            let seconds = Double(timestampMs - base) / 1000
-            guard seconds >= 0, seconds <= duration else { return nil }
-            return CGFloat(seconds / duration)
+        let reps = session.repTimestampsMs.compactMap { fraction(of: $0) }
+            .map { (fraction: $0, kind: MarkerKind.rep) }
+        let breaks = session.formBreakTimestampsMs.compactMap { fraction(of: $0) }
+            .map { (fraction: $0, kind: MarkerKind.formBreak) }
+        let holds = session.holdStartsMs.compactMap { fraction(of: $0) }
+            .map { (fraction: $0, kind: MarkerKind.holdStart) }
+
+        return (reps + breaks + holds).enumerated().map {
+            (offset: $0.offset, fraction: $0.element.fraction, kind: $0.element.kind)
         }
+    }
 
-        let reps = session.repTimestampsMs.compactMap { fraction($0) }
-            .map { (fraction: $0, isBreak: false) }
-        let breaks = session.formBreakTimestampsMs.compactMap { fraction($0) }
-            .map { (fraction: $0, isBreak: true) }
-
-        return (reps + breaks).enumerated().map {
-            (offset: $0.offset, fraction: $0.element.fraction, isBreak: $0.element.isBreak)
-        }
+    /// Where a capture-clock instant sits along the recording, 0…1.
+    private func fraction(of timestampMs: Int) -> CGFloat? {
+        guard duration > 0 else { return nil }
+        let seconds = Double(timestampMs - (session.videoStartMs ?? 0)) / 1000
+        guard seconds >= 0, seconds <= duration else { return nil }
+        return CGFloat(seconds / duration)
     }
 
     var body: some View {
@@ -75,15 +93,24 @@ struct SessionReviewView: View {
             VStack(spacing: 0) {
                 header
                 videoStage
-                scrubber
-                    .padding(.horizontal, Theme.Metric.screenPadding)
-                    .padding(.top, 18)
-                jointAngles
-                    .padding(.horizontal, Theme.Metric.screenPadding)
-                    .padding(.top, 26)
-                summary
-                    .padding(.top, 22)
-                Spacer(minLength: 0)
+
+                // Scrolls so the detail below the video stays reachable in
+                // landscape, where the stage takes most of the screen.
+                ScrollView {
+                    VStack(spacing: 0) {
+                        scrubber
+                            .padding(.horizontal, Theme.Metric.screenPadding)
+                            .padding(.top, 18)
+                        jointAngles
+                            .padding(.horizontal, Theme.Metric.screenPadding)
+                            .padding(.top, 26)
+                        holdBreakdown
+                        summary
+                            .padding(.top, 22)
+                    }
+                    .padding(.bottom, 24)
+                }
+                .scrollIndicators(.hidden)
             }
         }
         .navigationBarBackButtonHidden()
@@ -159,6 +186,8 @@ struct SessionReviewView: View {
 
     // MARK: - Video
 
+    private var isCompactHeight: Bool { verticalSizeClass == .compact }
+
     private var videoStage: some View {
         ZStack {
             Rectangle().fill(Theme.Color.card)
@@ -202,7 +231,7 @@ struct SessionReviewView: View {
                 .animation(.easeInOut(duration: 0.2), value: isPlaying)
             }
         }
-        .frame(height: 340)
+        .frame(height: isCompactHeight ? 200 : 340)
         .clipped()
     }
 
@@ -220,12 +249,12 @@ struct SessionReviewView: View {
                         .frame(height: 4)
 
                     // Event markers: green where a rep completed, red where
-                    // form broke. These are why the timeline is worth
-                    // scrubbing at all — you can go straight to the moment
-                    // rather than hunting for it.
+                    // form broke, white where a hold began. These are why the
+                    // timeline is worth scrubbing at all — you can go straight
+                    // to the moment rather than hunting for it.
                     ForEach(markers, id: \.offset) { marker in
                         Capsule()
-                            .fill(marker.isBreak ? Theme.Color.warning : Theme.Color.valid)
+                            .fill(marker.kind.color)
                             .frame(width: 2, height: 12)
                             .offset(x: marker.fraction * (width - 2))
                     }
@@ -296,6 +325,60 @@ struct SessionReviewView: View {
                 .foregroundStyle(Theme.Color.primaryText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Each hold in the set, tappable to jump straight to it.
+    ///
+    /// A set of six attempts is six separate things to look at, and the
+    /// interesting question is usually "what was different about the good
+    /// one?" — so each chip carries its own line score and seeks to its start.
+    @ViewBuilder
+    private var holdBreakdown: some View {
+        let holds = session.holdSegments
+        if holds.count > 1 {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("HOLDS")
+                    .cardLabelStyle()
+                    .padding(.horizontal, Theme.Metric.screenPadding)
+
+                ScrollView(.horizontal) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(holds.enumerated()), id: \.offset) { index, hold in
+                            Button {
+                                guard let f = fraction(of: hold.startTimestampMs) else { return }
+                                currentTime = f * duration
+                                seek(to: currentTime)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("HOLD \(index + 1)")
+                                        .cardLabelStyle()
+                                    Text(SessionResult.preciseDurationLabel(hold.duration))
+                                        .font(.system(size: 17, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(Theme.Color.primaryText)
+                                    Text(hold.quality.map { "\(Int(($0 * 100).rounded()))% line" }
+                                         ?? "line —")
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundStyle(
+                                            (hold.quality ?? 0) > 0.75
+                                                ? Theme.Color.valid : Theme.Color.secondaryText
+                                        )
+                                }
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 10)
+                                .background(
+                                    Theme.Color.card,
+                                    in: .rect(cornerRadius: Theme.Metric.cardRadius)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, Theme.Metric.screenPadding)
+                }
+                .scrollIndicators(.hidden)
+            }
+            .padding(.top, 22)
+        }
     }
 
     private var summary: some View {
