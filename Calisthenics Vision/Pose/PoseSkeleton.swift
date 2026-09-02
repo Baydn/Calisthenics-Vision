@@ -100,6 +100,24 @@ struct Pose {
         return abs(shoulder.x - hip.x) > abs(shoulder.y - hip.y)
     }
 
+    /// How much of the shoulder→ankle line runs along the camera axis, 0…1.
+    ///
+    /// Depth is by far the weakest axis in a monocular pose estimate. Joint
+    /// angles measured across the image survive that fine, but body-line
+    /// straightness measured end-on is dominated by z error — it will read as
+    /// bent no matter how straight the person is. This is what tells the form
+    /// checks when to stay quiet.
+    var bodyLineDepthFraction: Double? {
+        guard let shoulder = worldMidpoint(.leftShoulder, .rightShoulder),
+              let ankle = worldMidpoint(.leftAnkle, .rightAnkle)
+        else { return nil }
+
+        let line = ankle - shoulder
+        let length = simd_length(line)
+        guard length > 0.01 else { return nil }
+        return abs(line.z) / length
+    }
+
     private func worldMidpoint(_ a: PoseJoint, _ b: PoseJoint) -> SIMD3<Double>? {
         guard let pa = worldPoint(a), let pb = worldPoint(b) else { return nil }
         return (pa + pb) / 2

@@ -43,6 +43,9 @@ struct PushUpTracker: MovementTracker {
     var minConfidence: Float = 0.5
     /// Form judgements need firmer evidence than rep counting does.
     var formConfidence: Float = 0.8
+    /// Above this share of the body line lying along the camera axis, posture
+    /// is not measurable well enough to comment on.
+    var maxBodyLineDepth: Double = 0.6
 
     private(set) var progress = MovementProgress()
 
@@ -63,6 +66,10 @@ struct PushUpTracker: MovementTracker {
     /// Whether the body is oriented like a push-up right now, exposed so the
     /// HUD can explain why nothing is being counted.
     private(set) var isInPosition = false
+
+    /// Whether posture can currently be judged at all. False when the camera
+    /// is end-on to the body or the legs aren't visible — reps still count.
+    private(set) var isFormMeasurable = false
 
     /// Latest measurements, for on-device diagnostics.
     private(set) var lastElbowAngle: Double?
@@ -218,10 +225,29 @@ struct PushUpTracker: MovementTracker {
             confidence(pose, .leftAnkle),
             confidence(pose, .rightAnkle)
         )
-        guard ankleConfidence >= formConfidence, let hip = hipAlignment(pose) else {
+
+        // Facing the camera, the body line runs into depth — the one axis a
+        // monocular estimate can't measure well — so straightness there is
+        // guesswork dressed up as a number. Counting reps still works (elbow
+        // flexion is measured across the body, not along it); judging posture
+        // does not, so say nothing rather than something wrong.
+        let depthDominant = (pose.bodyLineDepthFraction ?? 0) > maxBodyLineDepth
+
+        guard !depthDominant,
+              ankleConfidence >= formConfidence,
+              let hip = hipAlignment(pose)
+        else {
             badFormFrames = 0
+            isFormMeasurable = false
+            // Don't leave the skeleton stuck red once we can no longer tell:
+            // an unmeasurable pose is not a failing one.
+            if !progress.isFormValid {
+                progress.isFormValid = true
+                return .formRecovered
+            }
             return nil
         }
+        isFormMeasurable = true
 
         // A straight body reads ~180° at the hip; deviation either way is a sag
         // or a pike.
