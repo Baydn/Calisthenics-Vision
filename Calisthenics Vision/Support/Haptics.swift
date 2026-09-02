@@ -39,6 +39,13 @@ enum Haptics {
         light.impactOccurred()
     }
 
+    /// One quiet pulse per second of a valid hold. Upside down you can't see
+    /// the screen at all, so this is the only feedback that reaches you.
+    static func holdTick() {
+        let soft = UIImpactFeedbackGenerator(style: .rigid)
+        soft.impactOccurred(intensity: 0.5)
+    }
+
     static func sessionStart() {
         let heavy = UIImpactFeedbackGenerator(style: .heavy)
         heavy.impactOccurred()

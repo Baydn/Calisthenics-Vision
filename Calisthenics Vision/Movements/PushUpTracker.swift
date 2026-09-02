@@ -69,6 +69,27 @@ struct PushUpTracker: MovementTracker {
     /// fast part of a rep doesn't register as sagging.
     private var framesToFlag = 12
 
+    var diagnostics: TrackerDiagnostics {
+        var d = TrackerDiagnostics()
+        d.isReady = isInPosition
+        d.readyLabel = isInPosition ? "in position" : "not in position"
+        d.primaryAngleLabel = "elbow"
+        d.primaryAngle = lastElbowAngle
+        d.secondaryAngleLabel = "hip"
+        d.secondaryAngle = lastHipAngle
+        if !isCalibrated {
+            d.note = "calibrating…"
+            d.noteIsWarning = true
+        } else {
+            d.note = String(
+                format: "gates %.0f°/%.0f° · form %@",
+                bottomThreshold, topThreshold,
+                isFormMeasurable ? "on" : "off"
+            )
+        }
+        return d
+    }
+
     /// Whether the body is oriented like a push-up right now, exposed so the
     /// HUD can explain why nothing is being counted.
     private(set) var isInPosition = false

@@ -27,7 +27,8 @@ struct TrainIdleView: View {
 
     @State private var camera = CameraController()
     @State private var poseSession = PoseSession()
-    @State private var tracker = PushUpTracker()
+    /// The tracker for the selected movement, or nil where none exists yet.
+    @State private var tracker: (any MovementTracker)? = PushUpTracker()
     @State private var progress = MovementProgress()
     @State private var lastEvent: FormIssue?
 
@@ -99,8 +100,11 @@ struct TrainIdleView: View {
     // MARK: - Pose handling
 
     private func handlePose(_ pose: Pose?, timestampMs: Int) {
-        let event = tracker.update(pose: pose, timestampMs: timestampMs)
-        progress = tracker.progress
+        // Trackers are value types, so mutate a local copy and write it back.
+        guard var current = tracker else { return }
+        let event = current.update(pose: pose, timestampMs: timestampMs)
+        tracker = current
+        progress = current.progress
 
         // Telemetry is only worth keeping for a session being recorded.
         if phase == .recording, let pose {
@@ -110,6 +114,10 @@ struct TrainIdleView: View {
         switch event {
         case .repCompleted:
             Haptics.repCounted()
+        case .holdTick:
+            // A quiet pulse each second, so a hold can be timed without
+            // looking at the screen — which is the whole point upside down.
+            Haptics.holdTick()
         case .formBreak(let issue):
             lastEvent = issue
             Haptics.formBreak()
@@ -146,8 +154,8 @@ struct TrainIdleView: View {
     }
 
     private func beginRecording() {
-        tracker.reset()
-        progress = tracker.progress
+        tracker?.reset()
+        progress = tracker?.progress ?? MovementProgress()
         lastEvent = nil
         elapsed = 0
         startedAt = Date()
@@ -164,8 +172,11 @@ struct TrainIdleView: View {
         let movement = selected
         let started = startedAt ?? Date()
         let duration = Date().timeIntervalSince(started)
-        let reps = tracker.progress.reps
-        let breaks = tracker.progress.formBreaks
+        let reps = tracker?.progress.reps ?? 0
+        let breaks = tracker?.progress.formBreaks ?? 0
+        // For a timed movement the meaningful number is validated hold time,
+        // not how long the recording ran.
+        let holdSeconds = tracker?.progress.holdDuration ?? 0
         let telemetryName = telemetry?.fileName
 
         telemetry?.finish()
@@ -177,7 +188,7 @@ struct TrainIdleView: View {
             let session = WorkoutSession(
                 movement: movement,
                 startedAt: started,
-                duration: duration,
+                duration: movement.isTimedHold ? holdSeconds : duration,
                 repCount: reps,
                 formBreaks: breaks,
                 videoFileName: recording?.url.lastPathComponent,
@@ -337,12 +348,24 @@ struct TrainIdleView: View {
                     .foregroundStyle(Theme.Color.primaryText.opacity(0.85))
             }
 
-            Text("\(progress.reps)")
-                .font(Theme.Font.hudCounter())
-                .foregroundStyle(Theme.Color.primaryText)
-                .contentTransition(.numericText())
-                .animation(.snappy(duration: 0.25), value: progress.reps)
-                .shadow(color: .black.opacity(0.5), radius: 8)
+            if tracker == nil {
+                unsupportedNotice
+            } else if selected.isTimedHold {
+                // A hold is measured in validated seconds, not wall time — the
+                // clock stops whenever the position breaks.
+                Text(SessionResult.durationLabel(progress.holdDuration))
+                    .font(Theme.Font.hudCounter())
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.Color.primaryText)
+                    .shadow(color: .black.opacity(0.5), radius: 8)
+            } else {
+                Text("\(progress.reps)")
+                    .font(Theme.Font.hudCounter())
+                    .foregroundStyle(Theme.Color.primaryText)
+                    .contentTransition(.numericText())
+                    .animation(.snappy(duration: 0.25), value: progress.reps)
+                    .shadow(color: .black.opacity(0.5), radius: 8)
+            }
 
             if let lastEvent {
                 Text(lastEvent.rawValue)
@@ -355,6 +378,25 @@ struct TrainIdleView: View {
             }
         }
         .animation(.snappy(duration: 0.2), value: lastEvent)
+    }
+
+    /// Shown for movements that are selectable but have no state machine yet.
+    private var unsupportedNotice: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "hourglass")
+                .font(.system(size: 28))
+                .foregroundStyle(Theme.Color.secondaryText)
+            Text("\(selected.displayName) tracking isn't ready yet")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Theme.Color.primaryText)
+            Text("You can still record the set — it just won't be scored.")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(Theme.Color.secondaryText)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 18)
+        .background(.black.opacity(0.35), in: .rect(cornerRadius: 16))
     }
 
     private var framingHint: some View {
@@ -472,17 +514,19 @@ struct TrainIdleView: View {
                          ? "no pose"
                          : "\(Int(poseSession.processedFPS)) fps")
                 }
-                Text(tracker.isInPosition ? "in position" : "not in position")
-                    .foregroundStyle(tracker.isInPosition
-                                     ? Theme.Color.valid : Theme.Color.secondaryText)
-                Text("elbow \(angleText(tracker.lastElbowAngle))")
-                Text("range \(angleText(tracker.observedMin))–\(angleText(tracker.observedMax))")
-                Text(tracker.isCalibrated
-                     ? "gates \(angleText(tracker.bottomThreshold))/\(angleText(tracker.topThreshold))"
-                     : "calibrating…")
-                    .foregroundStyle(tracker.isCalibrated
-                                     ? Theme.Color.valid : Theme.Color.warning)
-                Text("form  \(tracker.isFormMeasurable ? "measurable" : "not measurable")")
+                if let d = tracker?.diagnostics {
+                    Text(d.readyLabel)
+                        .foregroundStyle(d.isReady ? Theme.Color.valid : Theme.Color.secondaryText)
+                    Text("\(d.primaryAngleLabel) \(angleText(d.primaryAngle))")
+                    Text("\(d.secondaryAngleLabel) \(angleText(d.secondaryAngle))")
+                    if let note = d.note {
+                        Text(note)
+                            .foregroundStyle(d.noteIsWarning
+                                             ? Theme.Color.warning : Theme.Color.valid)
+                    }
+                } else {
+                    Text("no tracker").foregroundStyle(Theme.Color.warning)
+                }
             }
             .font(.system(size: 11, weight: .medium, design: .monospaced))
             .foregroundStyle(Theme.Color.secondaryText)
@@ -503,6 +547,12 @@ struct TrainIdleView: View {
             return
         }
         withAnimation(.snappy(duration: 0.2)) { selected = movement }
+        // Swap in the matching state machine. Nil means the movement has no
+        // tracker yet, which the HUD says out loud rather than counting
+        // nothing and looking broken.
+        tracker = movement.makeTracker()
+        progress = tracker?.progress ?? MovementProgress()
+        lastEvent = nil
     }
 }
 
