@@ -114,7 +114,7 @@ struct MovementIcon: View {
 // MARK: - Session row
 
 struct SessionRow: View {
-    let session: Session
+    let session: WorkoutSession
 
     var body: some View {
         HStack(spacing: 12) {

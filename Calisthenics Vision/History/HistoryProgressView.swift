@@ -9,7 +9,7 @@
 import SwiftUI
 
 struct HistoryProgressView: View {
-    let sessions: [Session]
+    let stats: SessionStats
 
     @Environment(Entitlements.self) private var entitlements
     @State private var filter: Movement?          // nil == "All"
@@ -62,11 +62,11 @@ struct HistoryProgressView: View {
     private var personalRecords: some View {
         HStack(spacing: 12) {
             RecordCard(
-                value: "\(SampleData.bestPushUpSet)",
+                value: "\(stats.bestPushUpSet)",
                 label: "BEST PUSH-UP SET"
             )
             RecordCard(
-                value: SessionResult.durationLabel(SampleData.longestHandstand),
+                value: SessionResult.durationLabel(stats.longestHold),
                 label: "LONGEST HANDSTAND"
             )
         }
@@ -173,7 +173,7 @@ private struct TrendChart: View {
 #Preview {
     ZStack {
         Theme.Color.background.ignoresSafeArea()
-        HistoryProgressView(sessions: SampleData.sessions)
+        HistoryProgressView(stats: SessionStore.stats(for: SampleSessions.make()))
     }
     .environment(Entitlements())
     .preferredColorScheme(.dark)

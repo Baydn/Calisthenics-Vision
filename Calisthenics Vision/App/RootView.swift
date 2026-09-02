@@ -76,11 +76,11 @@ struct AppTabBar: View {
                     .onTapGesture { selection = tab }
                 }
             }
-            .padding(.top, 16)
-
-            Spacer(minLength: 0)
+            .padding(.top, 14)
+            .padding(.bottom, 4)
         }
-        .frame(height: Theme.Metric.tabBarHeight)
+        // Sized by its content and pinned above the home indicator. A fixed
+        // height here would strand the icons partway up the bar.
         .background(Theme.Color.background)
     }
 }

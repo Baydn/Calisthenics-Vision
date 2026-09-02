@@ -9,7 +9,7 @@
 import SwiftUI
 
 struct HistoryCalendarView: View {
-    let sessions: [Session]
+    let sessions: [WorkoutSession]
 
     @State private var visibleMonth: Date = Date()
     @State private var selectedDay: Date = Calendar.current.startOfDay(for: Date())
@@ -19,13 +19,13 @@ struct HistoryCalendarView: View {
 
     /// Days in the visible month that have at least one session.
     private var activeDays: Set<Date> {
-        Set(sessions.map { calendar.startOfDay(for: $0.date) })
+        Set(sessions.map { calendar.startOfDay(for: $0.startedAt) })
     }
 
-    private var sessionsOnSelectedDay: [Session] {
+    private var sessionsOnSelectedDay: [WorkoutSession] {
         sessions
-            .filter { calendar.isDate($0.date, inSameDayAs: selectedDay) }
-            .sorted { $0.date < $1.date }
+            .filter { calendar.isDate($0.startedAt, inSameDayAs: selectedDay) }
+            .sorted { $0.startedAt < $1.startedAt }
     }
 
     var body: some View {
@@ -166,7 +166,7 @@ struct HistoryCalendarView: View {
 #Preview {
     ZStack {
         Theme.Color.background.ignoresSafeArea()
-        HistoryCalendarView(sessions: SampleData.sessions)
+        HistoryCalendarView(sessions: SampleSessions.make())
     }
     .preferredColorScheme(.dark)
 }

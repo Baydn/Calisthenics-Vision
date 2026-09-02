@@ -6,6 +6,7 @@
 //  the List / Calendar / Progress tabs swapping below it.
 //
 
+import SwiftData
 import SwiftUI
 
 enum HistoryTab: String, CaseIterable, Hashable {
@@ -15,8 +16,12 @@ enum HistoryTab: String, CaseIterable, Hashable {
 }
 
 struct HistoryView: View {
+    @Query(sort: \WorkoutSession.startedAt, order: .reverse)
+    private var sessions: [WorkoutSession]
+
     @State private var tab: HistoryTab = .list
-    private let sessions = SampleData.sessions
+
+    private var stats: SessionStats { SessionStore.stats(for: sessions) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -24,9 +29,9 @@ struct HistoryView: View {
                 ScreenHeader(title: "History")
 
                 HStack(spacing: 8) {
-                    StatCard(value: "\(SampleData.dayStreak)", label: "DAY STREAK")
-                    StatCard(value: "\(SampleData.repsThisWeek)", label: "REPS THIS WK")
-                    StatCard(value: "\(SampleData.totalSessions)", label: "SESSIONS")
+                    StatCard(value: "\(stats.dayStreak)", label: "DAY STREAK")
+                    StatCard(value: "\(stats.repsThisWeek)", label: "REPS THIS WK")
+                    StatCard(value: "\(stats.totalSessions)", label: "SESSIONS")
                 }
 
                 SegmentedControl(
@@ -39,10 +44,14 @@ struct HistoryView: View {
             .padding(.top, 8)
 
             Group {
-                switch tab {
-                case .list:     HistoryListView(sessions: sessions)
-                case .calendar: HistoryCalendarView(sessions: sessions)
-                case .progress: HistoryProgressView(sessions: sessions)
+                if sessions.isEmpty {
+                    emptyState
+                } else {
+                    switch tab {
+                    case .list:     HistoryListView(sessions: sessions)
+                    case .calendar: HistoryCalendarView(sessions: sessions)
+                    case .progress: HistoryProgressView(stats: stats)
+                    }
                 }
             }
             .padding(.top, 22)
@@ -53,9 +62,25 @@ struct HistoryView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.Color.background)
     }
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Text("No sessions yet")
+                .font(Theme.Font.title())
+                .foregroundStyle(Theme.Color.primaryText)
+            Text("Finish a workout on the Train tab and it'll show up here.")
+                .font(Theme.Font.body())
+                .foregroundStyle(Theme.Color.secondaryText)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, 40)
+        .padding(.top, 60)
+    }
 }
 
 #Preview {
     HistoryView()
+        .modelContainer(SampleSessions.previewContainer)
+        .environment(Entitlements())
         .preferredColorScheme(.dark)
 }

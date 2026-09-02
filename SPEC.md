@@ -14,7 +14,7 @@ breaks, and log synchronized video telemetry for calisthenics training.
 | ML Engine | Google MediaPipe Tasks Vision (`pose_landmarker_full.task` — 33 3D keypoints, Metal GPU delegate) |
 | Camera & Video | `AVCaptureSession` dual-sink pipeline: 1080p MP4 local recording + real-time YUV frame delivery to MediaPipe at 30–60 FPS |
 | Math & State Engine | Vector dot products for 2D joint-angle extraction, EMA keypoint smoothing, deterministic finite state machines for rep/hold detection |
-| Local Persistence | SQLite (indexed timestamps, joint-angle telemetry logs, MP4 file references) |
+| Local Persistence | **SwiftData** for session records; flat binary files for per-frame telemetry; MP4s on the filesystem (see "Storage layout" below) |
 | Monetization | StoreKit 2 / RevenueCat |
 | Feedback | `UIImpactFeedbackGenerator` / `UINotificationFeedbackGenerator` (haptics), `AVAudioPlayer` (short cue sounds), `AVSpeechSynthesizer` (Pro real-time audio coaching) |
 
@@ -68,6 +68,30 @@ animation should fire together as one bundle per event, not in isolation.
   of this is native: `withAnimation`/spring animation for a scale-bounce on
   the rep counter, and color transitions between the `#00FF66` valid-form
   and `#FF3366` warning-form skeleton strokes.
+
+## Storage layout
+
+Originally specced as "SQLite for everything". Split into three stores
+instead, because the three kinds of data have very different shapes:
+
+| Data | Volume | Where |
+|---|---|---|
+| Session records (date, movement, reps, form breaks) | Tiny, queried constantly | SwiftData |
+| Per-frame landmarks (33 × x/y/z at 30–60 FPS) | ~24 KB/s | Flat binary file per session |
+| Video recordings | ~100–150 MB per 10 min | Filesystem; the record stores the filename |
+
+A row per frame would mean thousands of inserts per second while the CPU is
+already saturated with pose inference. Fixed-size records in a flat file make
+writes a plain append and let the review scrubber seek to a timestamp instead
+of running a query — the same property that makes frame-accurate scrubbing
+(§3) cheap.
+
+- **Telemetry format** — 8-byte header (`CVT1`, landmark count), then 400-byte
+  frames: `Int32` timestamp + 33 × (x, y, z) `Float32`. Read back memory-mapped
+  so a long session doesn't have to sit in RAM to be scrubbed.
+- **Retention** — recordings are excluded from iCloud backup and pruned to the
+  tier's history window (Free: 7 days), which keeps the library from filling
+  the device. Cloud sync is a separate Pro feature.
 
 ## Future Roadmap & Backend Integrations
 - **Database & Auth** — Supabase / PostgreSQL (Apple/Google Sign-In, profile

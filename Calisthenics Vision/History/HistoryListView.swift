@@ -8,13 +8,13 @@
 import SwiftUI
 
 struct HistoryListView: View {
-    let sessions: [Session]
+    let sessions: [WorkoutSession]
 
-    private var grouped: [(day: Date, sessions: [Session])] {
+    private var grouped: [(day: Date, sessions: [WorkoutSession])] {
         let calendar = Calendar.current
-        let buckets = Dictionary(grouping: sessions) { calendar.startOfDay(for: $0.date) }
+        let buckets = Dictionary(grouping: sessions) { calendar.startOfDay(for: $0.startedAt) }
         return buckets
-            .map { (day: $0.key, sessions: $0.value.sorted { $0.date < $1.date }) }
+            .map { (day: $0.key, sessions: $0.value.sorted { $0.startedAt < $1.startedAt }) }
             .sorted { $0.day > $1.day }
     }
 
@@ -59,7 +59,7 @@ struct HistoryListView: View {
 #Preview {
     ZStack {
         Theme.Color.background.ignoresSafeArea()
-        HistoryListView(sessions: SampleData.sessions)
+        HistoryListView(sessions: SampleSessions.make())
     }
     .preferredColorScheme(.dark)
 }
