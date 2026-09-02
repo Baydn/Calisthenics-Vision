@@ -288,11 +288,44 @@ struct TrainIdleView: View {
 
     @ViewBuilder
     private var centrepiece: some View {
-        if phase == .recording || poseSession.pose != nil {
+        switch phase {
+        case .idle:
+            // No counter before a set exists — a big 0 sitting there reads as
+            // "already counting", and the reps it shows belong to no session.
+            if poseSession.pose != nil {
+                readyPrompt
+            } else {
+                framingHint
+            }
+
+        case .countdown:
+            // Deliberately empty: the countdown overlay owns the centre of the
+            // screen, and anything here shows through behind the number.
+            EmptyView()
+
+        case .recording, .saving:
             repCounter
-        } else {
-            framingHint
         }
+    }
+
+    /// Shown once you're detected but before a set starts.
+    private var readyPrompt: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 30))
+                .foregroundStyle(Theme.Color.valid)
+
+            Text("You're in frame")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(Theme.Color.primaryText)
+
+            Text("Tap record to start your set")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(Theme.Color.secondaryText)
+        }
+        .padding(.horizontal, 22)
+        .padding(.vertical, 18)
+        .background(.black.opacity(0.35), in: .rect(cornerRadius: 16))
     }
 
     private var repCounter: some View {
@@ -318,10 +351,6 @@ struct TrainIdleView: View {
                     .frame(height: 34)
                     .background(.black.opacity(0.45), in: .capsule)
                     .transition(.opacity)
-            } else if phase == .idle {
-                Text("Tap record when you're ready")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(Theme.Color.secondaryText)
             }
         }
         .animation(.snappy(duration: 0.2), value: lastEvent)

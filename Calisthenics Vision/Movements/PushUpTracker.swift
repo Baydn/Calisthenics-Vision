@@ -33,10 +33,16 @@ struct PushUpTracker: MovementTracker {
     /// Total elbow travel required before the motion is treated as a rep at
     /// all, so fidgeting in position can't calibrate its way into counting.
     var minimumRange: Double = 45
-    /// How far into the range the top/bottom gates sit, as a fraction. 0.25
-    /// leaves a wide dead band in the middle, which is what stops a wobble
-    /// near either end from double-counting.
-    var gateFraction: Double = 0.25
+    /// How far down into the range you must travel for the rep to count, as a
+    /// fraction of your own range. Deliberately loose: demanding near-maximum
+    /// depth every rep means a beginner sees nothing counted at all, and an
+    /// uncounted rep reads as "the app is broken" rather than "go deeper".
+    /// Depth coaching belongs in form feedback, not in withholding the count.
+    var bottomGateFraction: Double = 0.42
+    /// How close to full extension counts as locked out. Tighter than the
+    /// bottom gate, since the top of a push-up is unambiguous and this is what
+    /// separates consecutive reps.
+    var topGateFraction: Double = 0.25
 
     /// Landmarks below this confidence are ignored — an occluded arm reports
     /// a position, just not a trustworthy one.
@@ -93,7 +99,7 @@ struct PushUpTracker: MovementTracker {
         guard isCalibrated, let observedMax, let range = observedRange else {
             return lockoutAngle
         }
-        return observedMax - range * gateFraction
+        return observedMax - range * topGateFraction
     }
 
     /// Angle at or below which the rep counts as deep enough.
@@ -101,7 +107,7 @@ struct PushUpTracker: MovementTracker {
         guard isCalibrated, let observedMin, let range = observedRange else {
             return bottomAngle
         }
-        return observedMin + range * gateFraction
+        return observedMin + range * bottomGateFraction
     }
 
     mutating func update(pose: Pose?, timestampMs: Int) -> MovementEvent? {
