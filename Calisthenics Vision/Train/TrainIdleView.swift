@@ -12,6 +12,7 @@ import SwiftUI
 struct TrainIdleView: View {
     @Environment(Entitlements.self) private var entitlements
 
+    @State private var camera = CameraController()
     @State private var selected: Movement = .pushUps
     @State private var showLibrary = false
     @State private var showPaywall = false
@@ -21,9 +22,7 @@ struct TrainIdleView: View {
 
     var body: some View {
         ZStack {
-            // Stand-in for the camera preview.
-            Color(red: 0.09, green: 0.09, blue: 0.09)
-                .ignoresSafeArea()
+            cameraLayer
 
             VStack(spacing: 0) {
                 movementPicker
@@ -39,10 +38,34 @@ struct TrainIdleView: View {
                     .padding(.bottom, Theme.Metric.tabBarHeight + 8)
             }
         }
+        .task { await camera.start() }
+        .onDisappear { camera.stop() }
         .sheet(isPresented: $showLibrary) {
             MovementLibraryView(selected: $selected)
         }
         .sheet(isPresented: $showPaywall) { PaywallView() }
+    }
+
+    // MARK: - Camera
+
+    @ViewBuilder
+    private var cameraLayer: some View {
+        if case .running = camera.status {
+            CameraPreviewView(session: camera.captureSession)
+                .ignoresSafeArea()
+        } else {
+            Color(red: 0.09, green: 0.09, blue: 0.09)
+                .ignoresSafeArea()
+        }
+    }
+
+    /// Copy under the ghost figure, reflecting why the camera isn't live.
+    private var framingMessage: String {
+        switch camera.status {
+        case .running, .idle:  "Step into frame to begin"
+        case .unauthorized:    "Camera access is off — enable it in Settings"
+        case .unavailable:     "No camera available on this device"
+        }
     }
 
     // MARK: - Pieces
@@ -88,12 +111,18 @@ struct TrainIdleView: View {
 
     private var framingHint: some View {
         VStack(spacing: 28) {
-            GhostFigure()
-                .frame(width: 120, height: 160)
+            // Once pose detection is wired in, the ghost gives way to the
+            // live skeleton overlay.
+            if case .running = camera.status {} else {
+                GhostFigure()
+                    .frame(width: 120, height: 160)
+            }
 
-            Text("Step into frame to begin")
+            Text(framingMessage)
                 .font(.system(size: 17, weight: .regular))
                 .foregroundStyle(Theme.Color.secondaryText)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
         }
     }
 
