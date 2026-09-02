@@ -104,6 +104,27 @@ final class CameraController {
 
     // MARK: - Setup
 
+    /// Back wide-angle on real hardware; otherwise any video device.
+    ///
+    /// The fallback matters for two cases: unusual hardware, and virtual
+    /// cameras (CMIOExtension tools like SimulatorCamera/SimCam) that let the
+    /// Simulator see a Mac webcam. Those never report as `.builtInWideAngleCamera`,
+    /// so looking up that type alone would miss them.
+    private static func preferredDevice() -> AVCaptureDevice? {
+        if let back = AVCaptureDevice.default(
+            .builtInWideAngleCamera, for: .video, position: .back
+        ) {
+            return back
+        }
+
+        let discovery = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera],
+            mediaType: .video,
+            position: .unspecified
+        )
+        return discovery.devices.first ?? AVCaptureDevice.default(for: .video)
+    }
+
     private func requestAccess() async -> Bool {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
@@ -120,9 +141,7 @@ final class CameraController {
     private func configureIfNeeded() async throws {
         guard !isConfigured else { return }
 
-        guard let device = AVCaptureDevice.default(
-            .builtInWideAngleCamera, for: .video, position: .back
-        ) else {
+        guard let device = Self.preferredDevice() else {
             throw CameraError.noCaptureDevice
         }
 
@@ -151,7 +170,11 @@ final class CameraController {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             sessionQueue.async { [session, output] in
                 session.beginConfiguration()
-                session.sessionPreset = .hd1920x1080
+                // Prefer 1080p, but fall back — virtual cameras used for
+                // Simulator testing typically only offer 720p.
+                session.sessionPreset = session.canSetSessionPreset(.hd1920x1080)
+                    ? .hd1920x1080
+                    : .hd1280x720
 
                 guard session.canAddInput(input), session.canAddOutput(output) else {
                     session.commitConfiguration()
