@@ -98,8 +98,18 @@ final class PoseSession {
         let points = landmarks.map { CGPoint(x: Double($0.x), y: Double($0.y)) }
         let confidence = landmarks.map { $0.visibility?.floatValue ?? 1 }
 
+        // Metric 3D landmarks, so angles don't depend on where the camera is.
+        let world = (result?.worldLandmarks.first ?? []).map {
+            SIMD3<Double>(Double($0.x), Double($0.y), Double($0.z))
+        }
+
         let smoothed = smoother.smooth(
-            Pose(points: points, confidence: confidence, aspect: engine.sourceAspect)
+            Pose(
+                points: points,
+                confidence: confidence,
+                aspect: engine.sourceAspect,
+                worldPoints: world
+            )
         )
         pose = smoothed
         onPose?(smoothed, timestampMs)

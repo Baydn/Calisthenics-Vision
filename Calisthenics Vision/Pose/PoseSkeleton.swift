@@ -8,6 +8,7 @@
 
 import CoreGraphics
 import Foundation
+import simd
 
 /// Indices into MediaPipe's 33-landmark pose model.
 enum PoseJoint: Int, CaseIterable {
@@ -35,10 +36,30 @@ struct Pose {
     /// axis-aligned, so every angle here works in aspect-corrected space.
     let aspect: CGFloat
 
-    init(points: [CGPoint], confidence: [Float], aspect: CGFloat = 1) {
+    /// Metric 3D landmarks in meters, origin at the hip midpoint.
+    ///
+    /// All angle math uses these. The 2D projection can't measure a joint
+    /// whose motion runs along the camera axis — facing the lens during a
+    /// push-up collapses the whole torso to a few pixels — whereas world
+    /// coordinates are view-independent. `points` stays for drawing only.
+    let worldPoints: [SIMD3<Double>]
+
+    init(
+        points: [CGPoint],
+        confidence: [Float],
+        aspect: CGFloat = 1,
+        worldPoints: [SIMD3<Double>] = []
+    ) {
         self.points = points
         self.confidence = confidence
         self.aspect = aspect
+        self.worldPoints = worldPoints
+    }
+
+    func worldPoint(_ joint: PoseJoint) -> SIMD3<Double>? {
+        let index = joint.rawValue
+        guard index < worldPoints.count else { return nil }
+        return worldPoints[index]
     }
 
     func point(_ joint: PoseJoint) -> CGPoint? {
@@ -57,13 +78,31 @@ struct Pose {
     /// This is what separates a push-up from someone standing up and waving
     /// their arms — the elbow angle sweep looks identical otherwise.
     var isTorsoHorizontal: Bool? {
+        // In world space the torso can run across the frame (filmed side-on) or
+        // straight into depth (filmed head-on). Both are "horizontal"; what
+        // distinguishes standing is how much of the torso runs along the
+        // image-vertical axis, so measure that rather than comparing x to y.
+        if let shoulder = worldMidpoint(.leftShoulder, .rightShoulder),
+           let hip = worldMidpoint(.leftHip, .rightHip) {
+            let torso = hip - shoulder
+            let length = simd_length(torso)
+            guard length > 0.01 else { return nil }
+
+            // cos of the angle off vertical. Upright ≈ 1, lying flat ≈ 0.
+            let verticality = abs(torso.y) / length
+            return verticality < 0.7          // more than ~45° off vertical
+        }
+
         guard let shoulder = midpoint(.leftShoulder, .rightShoulder),
               let hip = midpoint(.leftHip, .rightHip)
         else { return nil }
 
-        let dx = abs(shoulder.x - hip.x)
-        let dy = abs(shoulder.y - hip.y)
-        return dx > dy
+        return abs(shoulder.x - hip.x) > abs(shoulder.y - hip.y)
+    }
+
+    private func worldMidpoint(_ a: PoseJoint, _ b: PoseJoint) -> SIMD3<Double>? {
+        guard let pa = worldPoint(a), let pb = worldPoint(b) else { return nil }
+        return (pa + pb) / 2
     }
 
     private func midpoint(_ a: PoseJoint, _ b: PoseJoint) -> CGPoint? {
@@ -76,6 +115,18 @@ struct Pose {
     /// This is the primitive behind every movement rule — e.g. a push-up's
     /// elbow angle is `angle(at: .leftElbow, from: .leftShoulder, to: .leftWrist)`.
     func angle(at vertex: PoseJoint, from first: PoseJoint, to second: PoseJoint) -> Double? {
+        // Prefer metric 3D — it measures the same angle regardless of where the
+        // camera is standing.
+        if let v = worldPoint(vertex), let a = worldPoint(first), let b = worldPoint(second) {
+            let u = a - v
+            let w = b - v
+            let magnitude = simd_length(u) * simd_length(w)
+            guard magnitude > 0 else { return nil }
+
+            let cosine = max(-1, min(1, simd_dot(u, w) / magnitude))
+            return acos(cosine) * 180 / Double.pi
+        }
+
         guard let rawV = point(vertex),
               let rawA = point(first),
               let rawB = point(second)
@@ -121,11 +172,27 @@ struct PoseSmoother {
     var factor: Double = 0.6
 
     private var previous: [CGPoint]?
+    private var previousWorld: [SIMD3<Double>]?
 
     mutating func smooth(_ pose: Pose) -> Pose {
+        // World points drive every angle, so they need smoothing at least as
+        // much as the drawn ones.
+        var world = pose.worldPoints
+        if let previousWorld, previousWorld.count == pose.worldPoints.count {
+            world = zip(previousWorld, pose.worldPoints).map { old, new in
+                old + (new - old) * factor
+            }
+        }
+        previousWorld = world
+
         guard let previous, previous.count == pose.points.count else {
             self.previous = pose.points
-            return pose
+            return Pose(
+                points: pose.points,
+                confidence: pose.confidence,
+                aspect: pose.aspect,
+                worldPoints: world
+            )
         }
 
         let blended = zip(previous, pose.points).map { old, new in
@@ -135,8 +202,16 @@ struct PoseSmoother {
             )
         }
         self.previous = blended
-        return Pose(points: blended, confidence: pose.confidence, aspect: pose.aspect)
+        return Pose(
+            points: blended,
+            confidence: pose.confidence,
+            aspect: pose.aspect,
+            worldPoints: world
+        )
     }
 
-    mutating func reset() { previous = nil }
+    mutating func reset() {
+        previous = nil
+        previousWorld = nil
+    }
 }

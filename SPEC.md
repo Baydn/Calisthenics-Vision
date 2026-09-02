@@ -13,7 +13,7 @@ breaks, and log synchronized video telemetry for calisthenics training.
 | Target Platform | iOS 17.0+ (Swift, SwiftUI) |
 | ML Engine | Google MediaPipe Tasks Vision (`pose_landmarker_full.task` — 33 3D keypoints, Metal GPU delegate) |
 | Camera & Video | `AVCaptureSession` dual-sink pipeline: 1080p MP4 local recording + real-time YUV frame delivery to MediaPipe at 30–60 FPS |
-| Math & State Engine | Vector dot products for 2D joint-angle extraction, EMA keypoint smoothing, deterministic finite state machines for rep/hold detection |
+| Math & State Engine | Joint angles from **metric 3D world landmarks** (view-independent — the 2D projection can't measure a joint moving along the camera axis), EMA smoothing, deterministic finite state machines for rep/hold detection |
 | Local Persistence | **SwiftData** for session records; flat binary files for per-frame telemetry; MP4s on the filesystem (see "Storage layout" below) |
 | Monetization | StoreKit 2 / RevenueCat |
 | Feedback | `UIImpactFeedbackGenerator` / `UINotificationFeedbackGenerator` (haptics), `AVAudioPlayer` (short cue sounds), `AVSpeechSynthesizer` (Pro real-time audio coaching) |
@@ -26,13 +26,21 @@ breaks, and log synchronized video telemetry for calisthenics training.
   `#FF3366` for a form-break warning.
 - High-contrast, large-format typography (80pt+) for glanceable rep counts
   and hold timers, readable from 6–10 feet away.
-- Onboarding camera-angle wizard to verify optimal 45°–90° side-profile
-  framing before a session starts.
+- **Angle-agnostic by design.** Prop the phone anywhere and start training —
+  side-on, head-on, or any angle between. There is no "correct" position to
+  get right first. The only requirement is that most of the body is visible.
+  Onboarding therefore checks *framing* (is your whole body in shot?), never
+  a prescribed angle.
 
 ### 2. Movement Algorithms
 - **Push-Up Counter** — state machine: `TOP` (≥160°) → `BOTTOM` (≤90°) →
-  `TOP` (lockout). Hip-sag warning if Shoulder-Hip-Ankle alignment strays
-  more than 15°.
+  `TOP` (lockout). Gated on the torso reading more than ~45° off vertical, so
+  standing and moving your arms — which sweeps the identical elbow range —
+  never counts. A lockout must be observed before the counter arms, so
+  settling into position isn't a free rep. Hip-sag warning if
+  Shoulder-Hip-Ankle strays more than 15°, and only when the ankles are
+  genuinely visible: with the phone close the legs are often cropped, and a
+  confident-sounding warning off a guessed landmark is worse than silence.
 - **Handstand Timer** — inversion detection (wrists below hips/ankles in
   image space) combined with a line-alignment hold timer across
   Wrist-Shoulder-Hip-Ankle (≥165°).
