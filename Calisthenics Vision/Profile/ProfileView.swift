@@ -82,7 +82,8 @@ struct ProfileView: View {
                     Text("Upgrade to Pro")
                         .font(.system(size: 20, weight: .bold))
                     Text("Planche, pull-ups, tempo analytics & more")
-                        .font(.system(size: 14, weight: .regular))
+                        .font(.system(size: 13, weight: .regular))
+                        .fixedSize(horizontal: false, vertical: true)
                         .foregroundStyle(Theme.Color.background.opacity(0.6))
                 }
                 Spacer()

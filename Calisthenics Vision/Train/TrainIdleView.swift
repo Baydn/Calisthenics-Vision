@@ -49,11 +49,12 @@ struct TrainIdleView: View {
 
     private var movementPicker: some View {
         ScrollView(.horizontal) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 ForEach(quickPicks) { movement in
                     FilterChip(
                         title: movement.displayName,
-                        isActive: movement == selected
+                        isActive: movement == selected,
+                        horizontalPadding: 14
                     ) {
                         select(movement)
                     }
@@ -67,7 +68,8 @@ struct TrainIdleView: View {
                             .font(Theme.Font.control())
                     }
                     .foregroundStyle(Theme.Color.primaryText)
-                    .padding(.horizontal, 18)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .padding(.horizontal, 14)
                     .frame(height: 32)
                     .overlay {
                         Capsule()
@@ -79,7 +81,7 @@ struct TrainIdleView: View {
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, Theme.Metric.screenPadding)
+            .padding(.horizontal, 16)
         }
         .scrollIndicators(.hidden)
     }

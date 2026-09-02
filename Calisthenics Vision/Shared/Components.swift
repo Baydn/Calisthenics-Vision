@@ -75,6 +75,8 @@ struct SegmentedControl<Segment: Hashable>: View {
 struct FilterChip: View {
     let title: String
     let isActive: Bool
+    /// Tightened on screens that need to fit four chips across (Train).
+    var horizontalPadding: CGFloat = 18
     let action: () -> Void
 
     var body: some View {
@@ -82,7 +84,8 @@ struct FilterChip: View {
             Text(title)
                 .font(isActive ? Theme.Font.controlActive() : Theme.Font.control())
                 .foregroundStyle(isActive ? Theme.Color.background : Theme.Color.secondaryText)
-                .padding(.horizontal, 18)
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(.horizontal, horizontalPadding)
                 .frame(height: 32)
                 .background(isActive ? Theme.Color.primaryText : Theme.Color.card, in: .capsule)
         }

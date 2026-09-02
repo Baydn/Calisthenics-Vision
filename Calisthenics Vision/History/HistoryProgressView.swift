@@ -66,9 +66,7 @@ struct HistoryProgressView: View {
                 label: "BEST PUSH-UP SET"
             )
             RecordCard(
-                value: SessionResult.hold(SampleData.longestHandstand)
-                    .displayValue
-                    .replacingOccurrences(of: " hold", with: ""),
+                value: SessionResult.durationLabel(SampleData.longestHandstand),
                 label: "LONGEST HANDSTAND"
             )
         }
@@ -79,6 +77,11 @@ struct HistoryProgressView: View {
             TrendChart(values: trendValues, isDimmed: !entitlements.isProUnlocked)
 
             if !entitlements.isProUnlocked {
+                // Scrim so the upsell copy stays legible over the bars
+                // regardless of how tall the underlying data runs.
+                RoundedRectangle(cornerRadius: Theme.Metric.cardRadius)
+                    .fill(Theme.Color.background.opacity(0.55))
+
                 VStack(spacing: 14) {
                     Circle()
                         .fill(Theme.Color.elevated)

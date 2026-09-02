@@ -71,17 +71,15 @@ enum SessionResult: Hashable {
         case .reps(let count):
             "\(count) reps"
         case .hold(let duration):
-            "\(Self.timeFormatter.string(from: duration) ?? "0:00") hold"
+            "\(Self.durationLabel(duration)) hold"
         }
     }
 
-    private static let timeFormatter: DateComponentsFormatter = {
-        let formatter = DateComponentsFormatter()
-        formatter.allowedUnits = [.minute, .second]
-        formatter.unitsStyle = .positional
-        formatter.zeroFormattingBehavior = .pad
-        return formatter
-    }()
+    /// `m:ss` — minutes unpadded, seconds zero-padded (e.g. "0:38", "1:02").
+    static func durationLabel(_ duration: TimeInterval) -> String {
+        let total = Int(duration.rounded())
+        return "\(total / 60):" + String(format: "%02d", total % 60)
+    }
 }
 
 struct Session: Identifiable, Hashable {
