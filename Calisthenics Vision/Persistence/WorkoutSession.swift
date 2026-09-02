@@ -40,6 +40,10 @@ final class WorkoutSession {
     var repTimestampsMs: [Int] = []
     var formBreakTimestampsMs: [Int] = []
 
+    /// Mean line quality for a timed hold, 0…1. Nil for movements that don't
+    /// score form, and for sessions recorded before it was measured.
+    var formQuality: Double?
+
     init(
         id: UUID = UUID(),
         movement: Movement,
@@ -51,7 +55,8 @@ final class WorkoutSession {
         telemetryFileName: String? = nil,
         videoStartMs: Int? = nil,
         repTimestampsMs: [Int] = [],
-        formBreakTimestampsMs: [Int] = []
+        formBreakTimestampsMs: [Int] = [],
+        formQuality: Double? = nil
     ) {
         self.id = id
         self.movement = movement
@@ -64,10 +69,16 @@ final class WorkoutSession {
         self.videoStartMs = videoStartMs
         self.repTimestampsMs = repTimestampsMs
         self.formBreakTimestampsMs = formBreakTimestampsMs
+        self.formQuality = formQuality
     }
 }
 
 extension WorkoutSession {
+
+    /// Line quality as a percentage string, where it was measured.
+    var formQualityLabel: String? {
+        formQuality.map { "\(Int(($0 * 100).rounded()))%" }
+    }
 
     var result: SessionResult {
         movement.isTimedHold ? .hold(duration) : .reps(repCount)

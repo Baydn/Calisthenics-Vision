@@ -12,25 +12,52 @@
 //  (SPEC.md §3, "frame-accurate scrubbing").
 //
 //  Layout:  [ 8-byte header ][ frame ][ frame ]…
-//  Header:  magic "CVT1" (4) · landmarkCount UInt16 (2) · reserved (2)
-//  Frame:   timestampMs Int32 (4) · landmarkCount × (x, y, z) Float32
+//  Header:  magic "CVT2" (4) · landmarkCount UInt16 (2) · reserved (2)
+//  Frame:   timestampMs Int32 (4) · landmarkCount × (x, y, wx, wy, wz) Float32
+//
+//  Both coordinate spaces are stored because they answer different questions:
+//  normalized (x, y) is where to *draw* the skeleton over the video, while
+//  metric world (wx, wy, wz) is what joint angles must be measured in. Keeping
+//  only the world points made review draw metres as if they were image
+//  fractions; keeping only the 2D ones would make every replayed angle wrong.
 //
 
+import CoreGraphics
 import Foundation
+import simd
 
 enum Telemetry {
-    static let magic: [UInt8] = Array("CVT1".utf8)
+    static let magic: [UInt8] = Array("CVT2".utf8)
     static let headerSize = 8
     static let landmarkCount = 33
-    /// 4-byte timestamp + 33 landmarks × 3 axes × 4 bytes = 400 bytes.
-    static var frameSize: Int { 4 + landmarkCount * 3 * 4 }
+    /// x, y (normalized) plus wx, wy, wz (metres).
+    static let valuesPerLandmark = 5
+    /// 4-byte timestamp + 33 landmarks × 5 values × 4 bytes = 664 bytes.
+    /// ~20 KB/s at 30 FPS, so about 1.2 MB per minute — still trivial beside
+    /// the video.
+    static var frameSize: Int { 4 + landmarkCount * valuesPerLandmark * 4 }
+    static var valueCount: Int { landmarkCount * valuesPerLandmark }
 }
 
 /// One frame of pose telemetry.
 struct TelemetryFrame {
     let timestampMs: Int32
-    /// Flattened `[x, y, z]` per landmark, normalized to the image.
+    /// Flattened `[x, y, wx, wy, wz]` per landmark.
     let values: [Float]
+
+    /// Normalized image points, for drawing.
+    var imagePoints: [CGPoint] {
+        stride(from: 0, to: values.count, by: Telemetry.valuesPerLandmark).map {
+            CGPoint(x: Double(values[$0]), y: Double(values[$0 + 1]))
+        }
+    }
+
+    /// Metric world points, for measuring angles.
+    var worldPoints: [SIMD3<Double>] {
+        stride(from: 0, to: values.count, by: Telemetry.valuesPerLandmark).map {
+            SIMD3(Double(values[$0 + 2]), Double(values[$0 + 3]), Double(values[$0 + 4]))
+        }
+    }
 }
 
 // MARK: - Writing
@@ -59,9 +86,9 @@ nonisolated final class TelemetryWriter {
         try handle.seekToEnd()
     }
 
-    /// - Parameter values: flattened x/y/z, `landmarkCount * 3` long.
+    /// - Parameter values: flattened x/y/wx/wy/wz, `landmarkCount * 5` long.
     func append(timestampMs: Int, values: [Float]) {
-        guard values.count == Telemetry.landmarkCount * 3 else { return }
+        guard values.count == Telemetry.valueCount else { return }
 
         withUnsafeBytes(of: Int32(timestampMs).littleEndian) {
             buffer.append(contentsOf: $0)
@@ -116,8 +143,8 @@ struct TelemetryReader {
         }
 
         var values = [Float]()
-        values.reserveCapacity(Telemetry.landmarkCount * 3)
-        for i in 0..<(Telemetry.landmarkCount * 3) {
+        values.reserveCapacity(Telemetry.valueCount)
+        for i in 0..<Telemetry.valueCount {
             let offset = start + 4 + i * 4
             let bits = data.withUnsafeBytes { raw in
                 raw.loadUnaligned(fromByteOffset: offset, as: UInt32.self).littleEndian

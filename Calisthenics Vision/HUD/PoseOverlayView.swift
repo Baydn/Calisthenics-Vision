@@ -15,12 +15,17 @@ struct PoseOverlayView: View {
     /// aspect-fill crop so landmarks land on the body rather than beside it.
     var sourceAspect: CGFloat = 9.0 / 16.0
 
+    /// Must match how the video underneath is laid out: the live preview fills
+    /// (`.resizeAspectFill`), while review letterboxes (`.resizeAspect`). Get
+    /// this wrong and the skeleton sits beside the body instead of on it.
+    var contentMode: ContentMode = .fill
+
     var body: some View {
         Canvas { context, size in
             guard let pose else { return }
 
             let color = isFormValid ? Theme.Color.valid : Theme.Color.warning
-            let transform = Self.aspectFillTransform(sourceAspect: sourceAspect, into: size)
+            let transform = Self.transform(sourceAspect: sourceAspect, into: size, mode: contentMode)
 
             // Bones
             var path = Path()
@@ -48,21 +53,25 @@ struct PoseOverlayView: View {
         .allowsHitTesting(false)
     }
 
-    /// Maps normalized (0…1) landmark coordinates into view space the same way
-    /// `.resizeAspectFill` scales the preview — scale to cover, then centre the
-    /// overflow. Without this the skeleton drifts off the body on any view
-    /// whose aspect ratio differs from the camera's.
-    static func aspectFillTransform(
+    /// Maps normalized (0…1) landmark coordinates into view space exactly the
+    /// way the video underneath is laid out — cover and centre the overflow for
+    /// `.fill`, contain and centre the letterbox for `.fit`. Without matching
+    /// this the skeleton drifts off the body on any view whose aspect ratio
+    /// differs from the source.
+    static func transform(
         sourceAspect: CGFloat,
-        into size: CGSize
+        into size: CGSize,
+        mode: ContentMode = .fill
     ) -> (CGPoint) -> CGPoint {
         let viewAspect = size.width / max(size.height, 1)
+        let sourceIsWider = sourceAspect > viewAspect
 
         var drawWidth = size.width
         var drawHeight = size.height
 
-        if sourceAspect > viewAspect {
-            // Source is wider: fill height, overflow horizontally.
+        // Fill matches the wider dimension; fit matches the narrower one.
+        let matchHeight = mode == .fill ? sourceIsWider : !sourceIsWider
+        if matchHeight {
             drawWidth = size.height * sourceAspect
         } else {
             drawHeight = size.width / max(sourceAspect, 0.0001)

@@ -28,6 +28,8 @@ struct SessionReviewView: View {
     @State private var showsSkeleton = true
     @State private var isScrubbing = false
     @State private var timeObserver: Any?
+    /// Width ÷ height of the recording, so the overlay lands on the body.
+    @State private var videoAspect: CGFloat = 9.0 / 16.0
     @State private var showDeleteConfirmation = false
 
     /// Pose logged at the current playback position, if telemetry exists.
@@ -37,20 +39,11 @@ struct SessionReviewView: View {
         let target = Int32(base + Int(currentTime * 1000))
         guard let frame = reader.frame(nearest: target) else { return nil }
 
-        let points = stride(from: 0, to: frame.values.count, by: 3).map { i in
-            CGPoint(x: Double(frame.values[i]), y: Double(frame.values[i + 1]))
-        }
-        let world = stride(from: 0, to: frame.values.count, by: 3).map { i in
-            SIMD3<Double>(
-                Double(frame.values[i]),
-                Double(frame.values[i + 1]),
-                Double(frame.values[i + 2])
-            )
-        }
         return Pose(
-            points: points,
-            confidence: [Float](repeating: 1, count: points.count),
-            worldPoints: world
+            points: frame.imagePoints,
+            confidence: [Float](repeating: 1, count: Telemetry.landmarkCount),
+            aspect: videoAspect,
+            worldPoints: frame.worldPoints
         )
     }
 
@@ -175,7 +168,14 @@ struct SessionReviewView: View {
             }
 
             if showsSkeleton, let pose = poseAtCurrentTime {
-                PoseOverlayView(pose: pose, isFormValid: true)
+                // The player letterboxes (resizeAspect), so the overlay has to
+                // fit the same way or the skeleton drifts off the body.
+                PoseOverlayView(
+                    pose: pose,
+                    isFormValid: true,
+                    sourceAspect: videoAspect,
+                    contentMode: .fit
+                )
             }
 
             if player == nil {
@@ -301,10 +301,12 @@ struct SessionReviewView: View {
     private var summary: some View {
         HStack(spacing: 6) {
             Text(session.result.displayValue)
+            if let quality = session.formQualityLabel {
+                Text("·")
+                Text("\(quality) line")
+            }
             Text("·")
             Text("\(session.formBreaks) form break\(session.formBreaks == 1 ? "" : "s")")
-            Text("·")
-            Text(SessionResult.durationLabel(session.duration))
         }
         .font(.system(size: 15, weight: .medium))
         .foregroundStyle(Theme.Color.secondaryText)
@@ -325,6 +327,16 @@ struct SessionReviewView: View {
 
         let asset = AVURLAsset(url: url)
         duration = (try? await asset.load(.duration).seconds) ?? session.duration
+
+        // Read the real presentation size so the overlay matches the video
+        // rather than assuming portrait.
+        if let track = try? await asset.loadTracks(withMediaType: .video).first,
+           let size = try? await track.load(.naturalSize),
+           let transform = try? await track.load(.preferredTransform) {
+            let presented = size.applying(transform)
+            let w = abs(presented.width), h = abs(presented.height)
+            if w > 0, h > 0 { videoAspect = w / h }
+        }
 
         let item = AVPlayerItem(asset: asset)
         let player = AVPlayer(playerItem: item)
@@ -381,7 +393,9 @@ private struct VideoPlayerLayer: UIViewRepresentable {
     func makeUIView(context: Context) -> PlayerView {
         let view = PlayerView()
         view.playerLayer.player = player
-        view.playerLayer.videoGravity = .resizeAspectFill
+        // Fit rather than fill: a portrait recording in a landscape-ish stage
+        // would otherwise be cropped down to a strip of your torso.
+        view.playerLayer.videoGravity = .resizeAspect
         return view
     }
 

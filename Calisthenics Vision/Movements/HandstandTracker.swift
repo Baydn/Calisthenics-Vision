@@ -4,9 +4,11 @@
 //
 //  Handstand hold timing (SPEC.md §2).
 //
-//  Unlike a push-up this counts nothing — it accumulates time, and only while
-//  the hold is genuinely valid. Two conditions must both hold: the body is
-//  inverted, and the wrist-shoulder-hip-ankle line is straight enough.
+//  The clock runs whenever you're inverted. Straightness is *measured*, not
+//  required: an early handstand is banana-shaped, and refusing to time it
+//  reads as the app being broken rather than as coaching. Line quality is
+//  scored continuously instead and reported afterwards, so you can see what to
+//  work on without being denied credit for the hold.
 //
 //  Time only accrues frame to frame, so losing the pose mid-hold pauses the
 //  clock rather than silently crediting the gap.
@@ -17,14 +19,16 @@ import simd
 
 struct HandstandTracker: MovementTracker {
 
-    /// Minimum angle at the shoulder and hip for the line to count as straight.
-    var minAlignment: Double = 165
+    /// Perfect alignment. Deviation from this is what gets scored.
+    var idealAlignment: Double = 180
+    /// Deviation beyond which the line is called out — deliberately generous,
+    /// since this is a warning and not a gate.
+    var warnDeviation: Double = 45
     /// Landmarks below this are ignored — an unreliable point shouldn't end
     /// a hold that is actually fine.
     var minConfidence: Float = 0.5
-    /// Alignment must fail for this long before it's called a break, so a
-    /// wobble doesn't end an otherwise good hold. ~0.4s at 30 FPS.
-    var framesToFlag = 12
+    /// A wobble has to persist before it's mentioned. ~0.7s at 30 FPS.
+    var framesToFlag = 20
     /// Gap beyond which we assume tracking was lost rather than time passing.
     var maxFrameGapMs = 500
 
@@ -38,6 +42,11 @@ struct HandstandTracker: MovementTracker {
     private var badFormFrames = 0
     private var lastWholeSecond = 0
 
+    /// Running mean of line quality, weighted by time rather than frame count
+    /// so a dropped frame doesn't skew the score.
+    private var qualitySum: Double = 0
+    private var qualityWeight: Double = 0
+
     var diagnostics: TrackerDiagnostics {
         var d = TrackerDiagnostics()
         d.isReady = isInverted
@@ -46,12 +55,11 @@ struct HandstandTracker: MovementTracker {
         d.primaryAngle = shoulderAngle
         d.secondaryAngleLabel = "hip"
         d.secondaryAngle = hipAngle
-        if !isInverted {
+        if isInverted {
+            d.note = String(format: "holding · line %.0f%%", (progress.formQuality ?? 0) * 100)
+        } else {
             d.note = "waiting for inversion"
             d.noteIsWarning = true
-        } else {
-            d.note = progress.isFormValid ? "holding" : "line lost"
-            d.noteIsWarning = !progress.isFormValid
         }
         return d
     }
@@ -72,11 +80,10 @@ struct HandstandTracker: MovementTracker {
         hipAngle = alignment(pose, at: .leftHip, from: .leftShoulder, to: .leftAnkle,
                              mirror: (.rightHip, .rightShoulder, .rightAnkle))
 
-        let inverted = Self.isInverted(pose)
         let wasInverted = isInverted
-        isInverted = inverted
+        isInverted = Self.isInverted(pose)
 
-        guard inverted else {
+        guard isInverted else {
             lastTimestampMs = nil
             badFormFrames = 0
             if wasInverted && !progress.isFormValid {
@@ -86,19 +93,18 @@ struct HandstandTracker: MovementTracker {
             return nil
         }
 
-        let aligned = isAligned
-        let event = updateFormState(aligned: aligned)
-
-        // Accrue time only across a plausible frame gap while the hold is good.
         defer { lastTimestampMs = timestampMs }
-        guard aligned, let previous = lastTimestampMs else { return event }
 
+        // The hold is running purely because you're upside down.
+        guard let previous = lastTimestampMs else { return nil }
         let delta = timestampMs - previous
-        guard delta > 0, delta <= maxFrameGapMs else { return event }
+        guard delta > 0, delta <= maxFrameGapMs else { return nil }
 
-        progress.holdDuration += Double(delta) / 1000
+        let seconds = Double(delta) / 1000
+        progress.holdDuration += seconds
+        recordQuality(over: seconds)
 
-        if let event { return event }
+        if let event = updateFormState() { return event }
 
         let whole = Int(progress.holdDuration)
         if whole > lastWholeSecond {
@@ -116,32 +122,60 @@ struct HandstandTracker: MovementTracker {
         lastTimestampMs = nil
         badFormFrames = 0
         lastWholeSecond = 0
+        qualitySum = 0
+        qualityWeight = 0
     }
 
-    // MARK: - Conditions
+    // MARK: - Line quality
 
-    private var isAligned: Bool {
-        guard let shoulderAngle, let hipAngle else { return false }
-        return shoulderAngle >= minAlignment && hipAngle >= minAlignment
+    /// How straight the line is right now, 0…1.
+    ///
+    /// Full marks at dead straight, tapering to zero at 90° off — a scale
+    /// that keeps ordinary imperfection in the useful middle of the range
+    /// rather than bottoming out the moment you bend.
+    var currentQuality: Double? {
+        let angles = [shoulderAngle, hipAngle].compactMap { $0 }
+        guard !angles.isEmpty else { return nil }
+
+        // Worst joint, not the average: a straight shoulder shouldn't mask a
+        // piked hip. A line is only as good as its biggest bend, which is also
+        // how a coach would read it.
+        let worstDeviation = angles.map { abs(idealAlignment - $0) }.max() ?? 0
+        return max(0, 1 - worstDeviation / 90)
     }
 
-    private mutating func updateFormState(aligned: Bool) -> MovementEvent? {
-        if aligned {
-            badFormFrames = 0
-            if !progress.isFormValid {
-                progress.isFormValid = true
-                return .formRecovered
-            }
-        } else {
+    private mutating func recordQuality(over seconds: Double) {
+        guard let quality = currentQuality else { return }
+        qualitySum += quality * seconds
+        qualityWeight += seconds
+        progress.formQuality = qualityWeight > 0 ? qualitySum / qualityWeight : nil
+    }
+
+    /// Flags only a sustained, large deviation — and never stops the clock.
+    private mutating func updateFormState() -> MovementEvent? {
+        let deviations = [shoulderAngle, hipAngle]
+            .compactMap { $0 }
+            .map { abs(idealAlignment - $0) }
+        guard let worst = deviations.max() else { return nil }
+
+        if worst > warnDeviation {
             badFormFrames += 1
             if badFormFrames == framesToFlag {
                 progress.isFormValid = false
                 progress.formBreaks += 1
                 return .formBreak(.lostAlignment)
             }
+        } else {
+            badFormFrames = 0
+            if !progress.isFormValid {
+                progress.isFormValid = true
+                return .formRecovered
+            }
         }
         return nil
     }
+
+    // MARK: - Inversion
 
     /// Inverted when the ankles sit above the shoulders.
     ///
@@ -157,10 +191,11 @@ struct HandstandTracker: MovementTracker {
 
         // Require a real vertical separation so someone lying flat, where the
         // ordering is near-arbitrary, doesn't read as a handstand.
-        let span = abs(shoulder.y - ankle.y)
-        guard span > 0.3 else { return false }
+        guard abs(shoulder.y - ankle.y) > 0.3 else { return false }
 
-        return ankle.y < hip.y && hip.y < shoulder.y
+        // Hips need only be above the shoulders — a tucked or piked handstand
+        // still counts, and the legs may be nowhere near overhead.
+        return hip.y < shoulder.y && ankle.y < shoulder.y
     }
 
     private static func midpoint(_ pose: Pose, _ a: PoseJoint, _ b: PoseJoint) -> SIMD3<Double>? {

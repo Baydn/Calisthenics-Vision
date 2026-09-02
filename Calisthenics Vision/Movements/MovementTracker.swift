@@ -33,6 +33,9 @@ struct MovementProgress: Equatable {
     var isFormValid = true
     /// 0…1 through the current rep, for progress visuals.
     var repProgress: Double = 0
+    /// Mean line quality over a hold, 0…1. Nil where the movement doesn't
+    /// score form, or where nothing measurable has happened yet.
+    var formQuality: Double?
 }
 
 /// What the debug readout shows. Generalized across movements so the HUD

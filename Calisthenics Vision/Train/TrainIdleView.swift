@@ -136,13 +136,17 @@ struct TrainIdleView: View {
         }
     }
 
-    /// Flattened x/y/z per landmark, preferring metric world coordinates.
+    /// Flattened `[x, y, wx, wy, wz]` per landmark — image space for drawing,
+    /// world space for measuring.
     private static func flatten(_ pose: Pose) -> [Float] {
-        if pose.worldPoints.count == Telemetry.landmarkCount {
-            return pose.worldPoints.flatMap { [Float($0.x), Float($0.y), Float($0.z)] }
+        (0..<Telemetry.landmarkCount).flatMap { index -> [Float] in
+            let point = index < pose.points.count ? pose.points[index] : .zero
+            let world = index < pose.worldPoints.count ? pose.worldPoints[index] : .zero
+            return [
+                Float(point.x), Float(point.y),
+                Float(world.x), Float(world.y), Float(world.z),
+            ]
         }
-        return pose.points.prefix(Telemetry.landmarkCount)
-            .flatMap { [Float($0.x), Float($0.y), 0] }
     }
 
     // MARK: - Session lifecycle
@@ -190,6 +194,7 @@ struct TrainIdleView: View {
         // For a timed movement the meaningful number is validated hold time,
         // not how long the recording ran.
         let holdSeconds = tracker?.progress.holdDuration ?? 0
+        let quality = tracker?.progress.formQuality
         let telemetryName = telemetry?.fileName
         let repMarks = repTimestamps
         let breakMarks = formBreakTimestamps
@@ -210,7 +215,8 @@ struct TrainIdleView: View {
                 telemetryFileName: telemetryName,
                 videoStartMs: recording?.firstFrameTimestampMs,
                 repTimestampsMs: repMarks,
-                formBreakTimestampsMs: breakMarks
+                formBreakTimestampsMs: breakMarks,
+                formQuality: quality
             )
             modelContext.insert(session)
             try? modelContext.save()
@@ -370,11 +376,24 @@ struct TrainIdleView: View {
             } else if selected.isTimedHold {
                 // A hold is measured in validated seconds, not wall time — the
                 // clock stops whenever the position breaks.
-                Text(SessionResult.durationLabel(progress.holdDuration))
-                    .font(Theme.Font.hudCounter())
-                    .monospacedDigit()
-                    .foregroundStyle(Theme.Color.primaryText)
-                    .shadow(color: .black.opacity(0.5), radius: 8)
+                VStack(spacing: 6) {
+                    Text(SessionResult.durationLabel(progress.holdDuration))
+                        .font(Theme.Font.hudCounter())
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.Color.primaryText)
+                        .shadow(color: .black.opacity(0.5), radius: 8)
+
+                    // Straightness is feedback, never a gate — the clock above
+                    // runs regardless of what this says.
+                    if let quality = progress.formQuality {
+                        Text("LINE \(Int((quality * 100).rounded()))%")
+                            .font(.system(size: 13, weight: .bold, design: .monospaced))
+                            .tracking(Theme.Metric.labelTracking)
+                            .foregroundStyle(quality > 0.75
+                                             ? Theme.Color.valid : Theme.Color.secondaryText)
+                            .shadow(color: .black.opacity(0.5), radius: 6)
+                    }
+                }
             } else {
                 Text("\(progress.reps)")
                     .font(Theme.Font.hudCounter())
