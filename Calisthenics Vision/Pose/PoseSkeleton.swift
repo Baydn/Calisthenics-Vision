@@ -27,10 +27,48 @@ struct Pose {
     /// Per-landmark presence confidence, same ordering.
     let confidence: [Float]
 
+    /// Source frame width ÷ height.
+    ///
+    /// Landmarks are normalized independently on each axis, so on a 9:16 frame
+    /// one normalized unit of x is a very different real distance from one unit
+    /// of y. Angles measured without undoing that are wrong for anything not
+    /// axis-aligned, so every angle here works in aspect-corrected space.
+    let aspect: CGFloat
+
+    init(points: [CGPoint], confidence: [Float], aspect: CGFloat = 1) {
+        self.points = points
+        self.confidence = confidence
+        self.aspect = aspect
+    }
+
     func point(_ joint: PoseJoint) -> CGPoint? {
         let index = joint.rawValue
         guard index < points.count else { return nil }
         return points[index]
+    }
+
+    /// Point in a space where one unit means the same distance on both axes.
+    private func corrected(_ point: CGPoint) -> CGPoint {
+        CGPoint(x: point.x * aspect, y: point.y)
+    }
+
+    /// Whether the torso is closer to horizontal than vertical.
+    ///
+    /// This is what separates a push-up from someone standing up and waving
+    /// their arms — the elbow angle sweep looks identical otherwise.
+    var isTorsoHorizontal: Bool? {
+        guard let shoulder = midpoint(.leftShoulder, .rightShoulder),
+              let hip = midpoint(.leftHip, .rightHip)
+        else { return nil }
+
+        let dx = abs(shoulder.x - hip.x)
+        let dy = abs(shoulder.y - hip.y)
+        return dx > dy
+    }
+
+    private func midpoint(_ a: PoseJoint, _ b: PoseJoint) -> CGPoint? {
+        guard let pa = point(a), let pb = point(b) else { return nil }
+        return corrected(CGPoint(x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2))
     }
 
     /// Interior angle at `vertex`, in degrees, formed by the two other joints.
@@ -38,7 +76,14 @@ struct Pose {
     /// This is the primitive behind every movement rule — e.g. a push-up's
     /// elbow angle is `angle(at: .leftElbow, from: .leftShoulder, to: .leftWrist)`.
     func angle(at vertex: PoseJoint, from first: PoseJoint, to second: PoseJoint) -> Double? {
-        guard let v = point(vertex), let a = point(first), let b = point(second) else { return nil }
+        guard let rawV = point(vertex),
+              let rawA = point(first),
+              let rawB = point(second)
+        else { return nil }
+
+        let v = corrected(rawV)
+        let a = corrected(rawA)
+        let b = corrected(rawB)
 
         let u = CGVector(dx: a.x - v.x, dy: a.y - v.y)
         let w = CGVector(dx: b.x - v.x, dy: b.y - v.y)
@@ -90,7 +135,7 @@ struct PoseSmoother {
             )
         }
         self.previous = blended
-        return Pose(points: blended, confidence: pose.confidence)
+        return Pose(points: blended, confidence: pose.confidence, aspect: pose.aspect)
     }
 
     mutating func reset() { previous = nil }

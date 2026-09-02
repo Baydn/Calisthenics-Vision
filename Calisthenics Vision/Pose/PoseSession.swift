@@ -98,7 +98,9 @@ final class PoseSession {
         let points = landmarks.map { CGPoint(x: Double($0.x), y: Double($0.y)) }
         let confidence = landmarks.map { $0.visibility?.floatValue ?? 1 }
 
-        let smoothed = smoother.smooth(Pose(points: points, confidence: confidence))
+        let smoothed = smoother.smooth(
+            Pose(points: points, confidence: confidence, aspect: engine.sourceAspect)
+        )
         pose = smoothed
         onPose?(smoothed, timestampMs)
     }
@@ -146,6 +148,10 @@ private nonisolated final class PoseInferenceEngine: NSObject,
         lock.unlock()
     }
 
+    /// Source frame aspect (width ÷ height), needed to undo MediaPipe's
+    /// per-axis normalization before any angle is measured.
+    private(set) var sourceAspect: CGFloat = 1
+
     /// Called on the capture queue.
     func process(_ sampleBuffer: CMSampleBuffer, timestampMs: Int) {
         // Take a strong reference under the lock so the landmarker can't be
@@ -157,6 +163,16 @@ private nonisolated final class PoseInferenceEngine: NSObject,
         }
         lastTimestampMs = timestampMs
         lock.unlock()
+
+        if let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
+            let width = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
+            let height = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
+            if height > 0 {
+                lock.lock()
+                sourceAspect = width / height
+                lock.unlock()
+            }
+        }
 
         // MediaPipe's live-stream mode requires strictly increasing
         // timestamps and throws otherwise, which the guard above enforces.

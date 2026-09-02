@@ -107,6 +107,10 @@ struct TrainIdleView: View {
         }
     }
 
+    private func angleText(_ angle: Double?) -> String {
+        angle.map { String(format: "%3.0f°", $0) } ?? "  —"
+    }
+
     /// Rep count at glanceable size, plus any active form warning.
     private var repCounter: some View {
         VStack(spacing: 12) {
@@ -154,19 +158,26 @@ struct TrainIdleView: View {
     private var performanceReadout: some View {
         #if DEBUG
         if case .running = camera.status {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(poseSession.pose == nil ? Theme.Color.warning : Theme.Color.valid)
-                    .frame(width: 6, height: 6)
-                Text(poseSession.pose == nil
-                     ? "no pose"
-                     : "\(Int(poseSession.processedFPS)) fps")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Theme.Color.secondaryText)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(poseSession.pose == nil ? Theme.Color.warning : Theme.Color.valid)
+                        .frame(width: 6, height: 6)
+                    Text(poseSession.pose == nil
+                         ? "no pose"
+                         : "\(Int(poseSession.processedFPS)) fps")
+                }
+                Text(tracker.isInPosition ? "in position" : "not in position")
+                    .foregroundStyle(tracker.isInPosition
+                                     ? Theme.Color.valid : Theme.Color.secondaryText)
+                Text("elbow \(angleText(tracker.lastElbowAngle))")
+                Text("hip   \(angleText(tracker.lastHipAngle))")
             }
+            .font(.system(size: 11, weight: .medium, design: .monospaced))
+            .foregroundStyle(Theme.Color.secondaryText)
             .padding(.horizontal, 10)
-            .frame(height: 24)
-            .background(Theme.Color.card.opacity(0.8), in: .capsule)
+            .padding(.vertical, 7)
+            .background(Theme.Color.card.opacity(0.8), in: .rect(cornerRadius: 8))
         }
         #endif
     }

@@ -25,18 +25,63 @@ struct PushUpTracker: MovementTracker {
     /// Landmarks below this confidence are ignored — an occluded arm reports
     /// a position, just not a trustworthy one.
     var minConfidence: Float = 0.5
+    /// Form judgements need firmer evidence than rep counting does.
+    var formConfidence: Float = 0.8
 
     private(set) var progress = MovementProgress()
 
-    private enum Phase { case top, descending, bottom }
-    private var phase: Phase = .top
+    private enum Phase {
+        /// Just entered position — wait for a lockout before counting anything,
+        /// so dropping in already at the bottom and pressing up isn't a rep.
+        case awaitingLockout
+        case top, descending, bottom
+    }
+    private var phase: Phase = .awaitingLockout
     /// Form must be bad for a few consecutive frames before it counts, so one
     /// noisy landmark doesn't fire a false warning.
     private var badFormFrames = 0
-    private var framesToFlag = 5
+    /// ~0.4s at 30 FPS. Long enough that transient landmark noise during the
+    /// fast part of a rep doesn't register as sagging.
+    private var framesToFlag = 12
+
+    /// Whether the body is oriented like a push-up right now, exposed so the
+    /// HUD can explain why nothing is being counted.
+    private(set) var isInPosition = false
+
+    /// Latest measurements, for on-device diagnostics.
+    private(set) var lastElbowAngle: Double?
+    private(set) var lastHipAngle: Double?
 
     mutating func update(pose: Pose?, timestampMs: Int) -> MovementEvent? {
-        guard let pose, let elbow = elbowAngle(pose) else { return nil }
+        guard let pose else {
+            isInPosition = false
+            lastElbowAngle = nil
+            lastHipAngle = nil
+            return nil
+        }
+
+        lastElbowAngle = elbowAngle(pose)
+        lastHipAngle = hipAlignment(pose)
+
+        // Only judge a push-up when the body is actually in one. Standing and
+        // bending your arms sweeps the same elbow range as a rep, so without
+        // this gate arm-waving counts as push-ups.
+        let horizontal = pose.isTorsoHorizontal ?? false
+        if horizontal != isInPosition {
+            isInPosition = horizontal
+            // Leaving position abandons any half-finished rep rather than
+            // letting it complete the next time you lie down.
+            // Re-entering position must start from a lockout, not mid-rep.
+            phase = .awaitingLockout
+            if !horizontal {
+                badFormFrames = 0
+                if !progress.isFormValid {
+                    progress.isFormValid = true
+                    return .formRecovered
+                }
+            }
+        }
+        guard horizontal, let elbow = lastElbowAngle else { return nil }
 
         progress.repProgress = normalizedDepth(elbow)
 
@@ -46,7 +91,7 @@ struct PushUpTracker: MovementTracker {
 
     mutating func reset() {
         progress = MovementProgress()
-        phase = .top
+        phase = .awaitingLockout
         badFormFrames = 0
     }
 
@@ -54,6 +99,9 @@ struct PushUpTracker: MovementTracker {
 
     private mutating func advance(elbow: Double) -> MovementEvent? {
         switch phase {
+        case .awaitingLockout:
+            if elbow >= lockoutAngle { phase = .top }
+
         case .top:
             // Require a clear departure from lockout before we believe a rep
             // has started; jitter right at the threshold shouldn't advance us.
@@ -87,7 +135,20 @@ struct PushUpTracker: MovementTracker {
     // MARK: - Form
 
     private mutating func checkForm(_ pose: Pose) -> MovementEvent? {
-        guard let hip = hipAlignment(pose) else { return nil }
+        // Legs are frequently cropped out or occluded when the phone is close,
+        // and MediaPipe still emits an extrapolated ankle. Judging form off a
+        // guessed landmark produces exactly the false "fix your hips" warning
+        // that makes the feature untrustworthy, so demand real confidence here
+        // — higher than for counting, since a wrong warning is worse than a
+        // missing one.
+        let ankleConfidence = max(
+            confidence(pose, .leftAnkle),
+            confidence(pose, .rightAnkle)
+        )
+        guard ankleConfidence >= formConfidence, let hip = hipAlignment(pose) else {
+            badFormFrames = 0
+            return nil
+        }
 
         // A straight body reads ~180° at the hip; deviation either way is a sag
         // or a pike.
