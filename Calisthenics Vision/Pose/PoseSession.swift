@@ -8,6 +8,11 @@
 //  Frame source agnostic by design: the live camera and a replayed video file
 //  drive this identically, so rep counting can be tested without hardware.
 //
+//  Threading: inference state lives in `PoseInferenceEngine`, off the main
+//  actor and behind a lock, because frames arrive on the capture queue while
+//  the main actor attaches and detaches. Reading the landmarker directly from
+//  the capture queue raced with its deallocation and crashed with SIGSEGV.
+//
 
 @preconcurrency import AVFoundation
 import CoreGraphics
@@ -22,18 +27,14 @@ final class PoseSession {
     private(set) var pose: Pose?
     /// Frames per second actually being processed, for a debug readout.
     private(set) var processedFPS: Double = 0
+    /// Last landmarker failure, so the UI can say why nothing is detected
+    /// instead of just showing an empty overlay.
+    private(set) var setupError: String?
 
     @ObservationIgnored private var source: FrameSource?
-    @ObservationIgnored private var landmarker: PoseLandmarkerService?
-    @ObservationIgnored private let relay = PoseResultRelay()
+    @ObservationIgnored private let engine = PoseInferenceEngine()
     @ObservationIgnored private var smoother = PoseSmoother()
-
-    @ObservationIgnored private var lastTimestampMs = 0
     @ObservationIgnored private var frameTimes: [Double] = []
-
-    /// Last landmarker failure, surfaced so the UI can say why nothing is
-    /// being detected instead of just showing an empty overlay.
-    private(set) var setupError: String?
 
     /// Begins detecting on frames from `source`.
     ///
@@ -45,58 +46,42 @@ final class PoseSession {
     func attach(to source: FrameSource) -> String? {
         detach()
 
-        do {
-            landmarker = try PoseLandmarkerService(delegate: relay)
-        } catch {
-            setupError = error.localizedDescription
-            return setupError
-        }
-        setupError = nil
-
-        relay.onResult = { [weak self] result, timestampMs in
+        engine.onResult = { [weak self] result in
             Task { @MainActor [weak self] in
-                self?.ingest(result, timestampMs: timestampMs)
+                self?.ingest(result)
             }
         }
 
-        source.onFrame = { [weak self] sampleBuffer, timestampMs in
-            self?.process(sampleBuffer, timestampMs: timestampMs)
+        if let error = engine.prepare() {
+            setupError = error
+            return error
         }
+        setupError = nil
 
+        source.setFrameHandler { [engine] sampleBuffer, timestampMs in
+            engine.process(sampleBuffer, timestampMs: timestampMs)
+        }
         self.source = source
         return nil
     }
 
     /// Stops detecting. Does not stop the underlying source.
     func detach() {
-        source?.onFrame = nil
+        source?.setFrameHandler(nil)
         source = nil
-        landmarker = nil
+        engine.teardown()
         smoother.reset()
         pose = nil
-        lastTimestampMs = 0
+        frameTimes.removeAll()
+        processedFPS = 0
     }
 
     func stop() { detach() }
 
-    // MARK: - Frame handling
-
-    /// Called on the capture queue.
-    private nonisolated func process(_ sampleBuffer: CMSampleBuffer, timestampMs: Int) {
-        guard let landmarker else { return }
-
-        // MediaPipe's live-stream mode requires strictly increasing
-        // timestamps and throws otherwise — a replayed video that loops would
-        // otherwise fail on the second pass.
-        guard timestampMs > lastTimestampMs else { return }
-        lastTimestampMs = timestampMs
-
-        guard let image = try? MPImage(sampleBuffer: sampleBuffer) else { return }
-        try? landmarker.detectAsync(image: image, timestampMs: timestampMs)
-    }
+    // MARK: - Results
 
     @MainActor
-    private func ingest(_ result: PoseLandmarkerResult?, timestampMs: Int) {
+    private func ingest(_ result: PoseLandmarkerResult?) {
         recordFrameTime()
 
         guard let landmarks = result?.landmarks.first, !landmarks.isEmpty else {
@@ -120,13 +105,59 @@ final class PoseSession {
     }
 }
 
-// MARK: - Delegate relay
+// MARK: - Inference engine
 
-/// MediaPipe delivers results on its own queue; this forwards them without
-/// dragging the main actor into the callback.
-private final class PoseResultRelay: NSObject, PoseLandmarkerLiveStreamDelegate, @unchecked Sendable {
+/// Owns the landmarker and the frame clock, guarded by a lock so the capture
+/// queue and the main actor can't trip over each other.
+private nonisolated final class PoseInferenceEngine: NSObject,
+    PoseLandmarkerLiveStreamDelegate, @unchecked Sendable {
 
-    var onResult: ((PoseLandmarkerResult?, Int) -> Void)?
+    var onResult: ((PoseLandmarkerResult?) -> Void)?
+
+    private let lock = NSLock()
+    private var landmarker: PoseLandmarkerService?
+    private var lastTimestampMs = -1
+
+    /// - Returns: an error description if the landmarker couldn't be created.
+    func prepare() -> String? {
+        do {
+            let service = try PoseLandmarkerService(delegate: self)
+            lock.lock()
+            landmarker = service
+            lastTimestampMs = -1
+            lock.unlock()
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    func teardown() {
+        lock.lock()
+        landmarker = nil
+        lastTimestampMs = -1
+        lock.unlock()
+    }
+
+    /// Called on the capture queue.
+    func process(_ sampleBuffer: CMSampleBuffer, timestampMs: Int) {
+        // Take a strong reference under the lock so the landmarker can't be
+        // released out from under `detectAsync`.
+        lock.lock()
+        guard let landmarker, timestampMs > lastTimestampMs else {
+            lock.unlock()
+            return
+        }
+        lastTimestampMs = timestampMs
+        lock.unlock()
+
+        // MediaPipe's live-stream mode requires strictly increasing
+        // timestamps and throws otherwise, which the guard above enforces.
+        guard let image = try? MPImage(sampleBuffer: sampleBuffer) else { return }
+        try? landmarker.detectAsync(image: image, timestampMs: timestampMs)
+    }
+
+    // MARK: PoseLandmarkerLiveStreamDelegate
 
     func poseLandmarker(
         _ poseLandmarker: PoseLandmarker,
@@ -134,6 +165,6 @@ private final class PoseResultRelay: NSObject, PoseLandmarkerLiveStreamDelegate,
         timestampInMilliseconds: Int,
         error: Error?
     ) {
-        onResult?(result, timestampInMilliseconds)
+        onResult?(result)
     }
 }

@@ -14,8 +14,13 @@
 import CoreMedia
 
 protocol FrameSource: AnyObject {
-    /// Called for every frame with its presentation timestamp in milliseconds.
-    var onFrame: (@Sendable (CMSampleBuffer, Int) -> Void)? { get set }
+    /// Receives every frame with its presentation timestamp in milliseconds.
+    ///
+    /// A setter rather than a property: frames are delivered on a background
+    /// queue while this is swapped from the main actor, so implementations
+    /// must synchronize the handoff internally and never expose the raw
+    /// closure for reading.
+    func setFrameHandler(_ handler: (@Sendable (CMSampleBuffer, Int) -> Void)?)
 
     func start() async
     func stop()
@@ -42,8 +47,11 @@ final class VideoFileSource: FrameSource {
 
     private(set) var status: Status = .idle
 
-    @ObservationIgnored
-    var onFrame: (@Sendable (CMSampleBuffer, Int) -> Void)?
+    @ObservationIgnored private let frameSink = FrameSink()
+
+    func setFrameHandler(_ handler: (@Sendable (CMSampleBuffer, Int) -> Void)?) {
+        frameSink.setHandler(handler)
+    }
 
     /// Replay at the video's own frame rate. Turn off to run as fast as the
     /// machine allows, which is what automated tests want.
@@ -127,7 +135,7 @@ final class VideoFileSource: FrameSource {
             }
             previousPTS = pts
 
-            onFrame?(buffer, Int(pts.seconds * 1000))
+            frameSink.deliver(buffer, timestampMs: Int(pts.seconds * 1000))
         }
 
         reader.cancelReading()

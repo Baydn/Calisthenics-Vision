@@ -9,6 +9,12 @@
 //  AVCaptureVideoDataOutput rather than a data output plus a movie file
 //  output — one clock, one frame stream, so telemetry and video stay aligned.
 //
+//  Threading: everything touching the capture session runs on `sessionQueue`;
+//  everything touching frames runs on `captureQueue`. Nothing reaches across
+//  without synchronization — an earlier version read the frame handler and the
+//  recorder directly from the capture queue while the main actor mutated them,
+//  which crashed with SIGSEGV once pose detection started attaching/detaching.
+//
 
 // AVFoundation's capture types aren't Sendable-annotated. We confine every
 // one of them to `sessionQueue`/`captureQueue`, so the warnings are noise.
@@ -29,26 +35,28 @@ final class CameraController {
 
     private(set) var status: Status = .idle
     private(set) var isRecording = false
+    /// Which camera is live. Front is usually what you want when the phone is
+    /// propped up facing you.
+    private(set) var position: AVCaptureDevice.Position = .back
 
-    /// Called on the capture queue for every frame, with the frame's
+    /// Receives every frame on the capture queue, with the frame's
     /// presentation timestamp in milliseconds.
-    @ObservationIgnored
-    var onFrame: (@Sendable (CMSampleBuffer, Int) -> Void)?
+    func setFrameHandler(_ handler: (@Sendable (CMSampleBuffer, Int) -> Void)?) {
+        frameSink.setHandler(handler)
+    }
 
-    @ObservationIgnored
-    private let session = AVCaptureSession()
-    @ObservationIgnored
-    private let sessionQueue = DispatchQueue(label: "camera.session")
-    @ObservationIgnored
-    private let captureQueue = DispatchQueue(label: "camera.frames")
-    @ObservationIgnored
-    private let output = AVCaptureVideoDataOutput()
-    @ObservationIgnored
-    private let recorder = VideoRecorder()
-    @ObservationIgnored
-    private lazy var frameHandler = FrameHandler()
-    @ObservationIgnored
-    private var dimensions = CMVideoDimensions(width: 1920, height: 1080)
+    @ObservationIgnored private let session = AVCaptureSession()
+    @ObservationIgnored private let sessionQueue = DispatchQueue(label: "camera.session")
+    @ObservationIgnored private let captureQueue = DispatchQueue(label: "camera.frames")
+    @ObservationIgnored private let output = AVCaptureVideoDataOutput()
+    @ObservationIgnored private let frameSink = FrameSink()
+    @ObservationIgnored private lazy var frameHandler = FrameHandler()
+
+    /// Touched only on `captureQueue`.
+    @ObservationIgnored private let recorder = VideoRecorder()
+    @ObservationIgnored private var dimensions = CMVideoDimensions(width: 1920, height: 1080)
+    @ObservationIgnored private var videoInput: AVCaptureDeviceInput?
+    @ObservationIgnored private var isConfigured = false
 
     /// Exposed so the preview layer can attach to the same session.
     var captureSession: AVCaptureSession { session }
@@ -85,6 +93,47 @@ final class CameraController {
         status = .idle
     }
 
+    // MARK: - Switching cameras
+
+    /// Swaps between the front and back camera, keeping the session running.
+    func flipCamera() async {
+        let target: AVCaptureDevice.Position = position == .back ? .front : .back
+        guard let device = Self.device(at: target) else { return }
+
+        let succeeded = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            sessionQueue.async { [session, output, videoInput] in
+                guard let newInput = try? AVCaptureDeviceInput(device: device) else {
+                    continuation.resume(returning: false)
+                    return
+                }
+
+                session.beginConfiguration()
+                if let videoInput { session.removeInput(videoInput) }
+
+                guard session.canAddInput(newInput) else {
+                    // Put the old input back rather than leaving a dead session.
+                    if let videoInput, session.canAddInput(videoInput) {
+                        session.addInput(videoInput)
+                    }
+                    session.commitConfiguration()
+                    continuation.resume(returning: false)
+                    return
+                }
+
+                session.addInput(newInput)
+                Self.configureConnection(output.connection(with: .video), position: target)
+                session.commitConfiguration()
+
+                continuation.resume(returning: true)
+            }
+        }
+
+        guard succeeded, let newInput = try? AVCaptureDeviceInput(device: device) else { return }
+        videoInput = newInput
+        position = target
+        dimensions = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
+    }
+
     // MARK: - Recording
 
     func startRecording() {
@@ -96,34 +145,23 @@ final class CameraController {
     }
 
     /// Stops recording and returns the finished MP4, if one was written.
+    ///
+    /// Hops onto the capture queue first: the recorder is only safe to touch
+    /// there, since that's where frames are appended.
     @discardableResult
     func stopRecording() async -> URL? {
         isRecording = false
-        return await recorder.finish()
+        return await withCheckedContinuation { (continuation: CheckedContinuation<URL?, Never>) in
+            captureQueue.async { [recorder] in
+                Task {
+                    let url = await recorder.finish()
+                    continuation.resume(returning: url)
+                }
+            }
+        }
     }
 
     // MARK: - Setup
-
-    /// Back wide-angle on real hardware; otherwise any video device.
-    ///
-    /// The fallback matters for two cases: unusual hardware, and virtual
-    /// cameras (CMIOExtension tools like SimulatorCamera/SimCam) that let the
-    /// Simulator see a Mac webcam. Those never report as `.builtInWideAngleCamera`,
-    /// so looking up that type alone would miss them.
-    private static func preferredDevice() -> AVCaptureDevice? {
-        if let back = AVCaptureDevice.default(
-            .builtInWideAngleCamera, for: .video, position: .back
-        ) {
-            return back
-        }
-
-        let discovery = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera],
-            mediaType: .video,
-            position: .unspecified
-        )
-        return discovery.devices.first ?? AVCaptureDevice.default(for: .video)
-    }
 
     private func requestAccess() async -> Bool {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
@@ -136,26 +174,61 @@ final class CameraController {
         }
     }
 
-    private var isConfigured = false
+    /// Camera at a given position, falling back to any video device.
+    ///
+    /// The fallback matters for two cases: unusual hardware, and virtual
+    /// cameras (CMIOExtension tools like SimulatorCamera/SimCam) that let the
+    /// Simulator see a Mac webcam. Those never report as
+    /// `.builtInWideAngleCamera`, so looking up that type alone would miss them.
+    private static func device(at position: AVCaptureDevice.Position) -> AVCaptureDevice? {
+        if let match = AVCaptureDevice.default(
+            .builtInWideAngleCamera, for: .video, position: position
+        ) {
+            return match
+        }
+
+        let discovery = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera],
+            mediaType: .video,
+            position: .unspecified
+        )
+        return discovery.devices.first ?? AVCaptureDevice.default(for: .video)
+    }
+
+    /// Portrait orientation, plus mirroring for the front camera so the
+    /// preview matches what a mirror would show.
+    private static func configureConnection(
+        _ connection: AVCaptureConnection?,
+        position: AVCaptureDevice.Position
+    ) {
+        guard let connection else { return }
+
+        if connection.isVideoRotationAngleSupported(90) {
+            connection.videoRotationAngle = 90
+        }
+        if connection.isVideoMirroringSupported {
+            connection.automaticallyAdjustsVideoMirroring = false
+            connection.isVideoMirrored = (position == .front)
+        }
+    }
 
     private func configureIfNeeded() async throws {
         guard !isConfigured else { return }
 
-        guard let device = Self.preferredDevice() else {
+        guard let device = Self.device(at: position) else {
             throw CameraError.noCaptureDevice
         }
-
         let input = try AVCaptureDeviceInput(device: device)
 
-        // Forward frames to the landmarker and, when recording, the writer.
-        frameHandler.onFrame = { [weak self] sampleBuffer in
-            guard let self else { return }
-            self.recorder.append(sampleBuffer)
-
-            let timestampMs = Int(
-                sampleBuffer.presentationTimeStamp.seconds * 1000
+        // Frames go to the recorder and then out to whoever is listening.
+        // Both hops are safe from the capture queue: the recorder is confined
+        // to it, and the sink synchronizes internally.
+        frameHandler.onFrame = { [recorder, frameSink] sampleBuffer in
+            recorder.append(sampleBuffer)
+            frameSink.deliver(
+                sampleBuffer,
+                timestampMs: Int(sampleBuffer.presentationTimeStamp.seconds * 1000)
             )
-            self.onFrame?(sampleBuffer, timestampMs)
         }
 
         output.setSampleBufferDelegate(frameHandler, queue: captureQueue)
@@ -167,6 +240,7 @@ final class CameraController {
         // backlog, so drop rather than queue when we fall behind.
         output.alwaysDiscardsLateVideoFrames = true
 
+        let position = position
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             sessionQueue.async { [session, output] in
                 session.beginConfiguration()
@@ -183,16 +257,14 @@ final class CameraController {
                 }
                 session.addInput(input)
                 session.addOutput(output)
-
-                if let connection = output.connection(with: .video) {
-                    connection.videoRotationAngle = 90   // portrait
-                }
+                Self.configureConnection(output.connection(with: .video), position: position)
 
                 session.commitConfiguration()
                 continuation.resume()
             }
         }
 
+        videoInput = input
         dimensions = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
         isConfigured = true
     }
@@ -215,7 +287,7 @@ enum CameraError: LocalizedError {
 // MARK: - Frame delegate
 
 /// Capture callbacks arrive on a background queue, so this stays off the
-/// main actor and simply forwards buffers to the controller.
+/// main actor and simply forwards buffers.
 private nonisolated final class FrameHandler: NSObject,
     AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
 

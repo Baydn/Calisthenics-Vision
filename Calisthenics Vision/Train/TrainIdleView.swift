@@ -29,8 +29,13 @@ struct TrainIdleView: View {
                 movementPicker
                     .padding(.top, 8)
 
-                performanceReadout
-                    .padding(.top, 10)
+                HStack {
+                    performanceReadout
+                    Spacer()
+                    flipCameraButton
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
 
                 Spacer()
 
@@ -75,6 +80,24 @@ struct TrainIdleView: View {
         } else {
             Color(red: 0.09, green: 0.09, blue: 0.09)
                 .ignoresSafeArea()
+        }
+    }
+
+    /// Front/back toggle. Front is usually what you want with the phone
+    /// propped up facing you, so you can see the skeleton while training.
+    @ViewBuilder
+    private var flipCameraButton: some View {
+        if case .running = camera.status {
+            Button {
+                Task { await camera.flipCamera() }
+            } label: {
+                Image(systemName: "arrow.trianglehead.2.clockwise.rotate.90.camera")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.Color.primaryText)
+                    .frame(width: 36, height: 36)
+                    .background(Theme.Color.card.opacity(0.8), in: .circle)
+            }
+            .buttonStyle(.plain)
         }
     }
 
