@@ -26,6 +26,7 @@ struct TrainIdleView: View {
     @Environment(\.modelContext) private var modelContext
 
     @State private var camera = CameraController()
+    @State private var settings = AppSettings.shared
     @State private var poseSession = PoseSession()
     /// The tracker for the selected movement, or nil where none exists yet.
     @State private var tracker: (any MovementTracker)? = PushUpTracker()
@@ -73,13 +74,16 @@ struct TrainIdleView: View {
         }
         .task {
             poseSession.onPose = handlePose
-            await camera.start()
+            await camera.start(
+                position: settings.cameraPosition,
+                preferUltraWide: settings.prefersUltraWide
+            )
             if case .running = camera.status {
                 poseSession.attach(to: camera)
             }
             // A workout is minutes of not touching the phone. Letting the
             // screen dim mid-set would be the single most annoying bug here.
-            UIApplication.shared.isIdleTimerDisabled = true
+            UIApplication.shared.isIdleTimerDisabled = settings.keepsScreenAwake
             Haptics.prepare()
         }
         .onDisappear {
@@ -146,8 +150,11 @@ struct TrainIdleView: View {
     private func startCountdown() {
         guard phase == .idle else { return }
         countdownTask?.cancel()
+        let seconds = settings.countdownSeconds
+        guard seconds > 0 else { beginRecording(); return }
+
         countdownTask = Task {
-            for value in stride(from: 3, through: 1, by: -1) {
+            for value in stride(from: seconds, through: 1, by: -1) {
                 phase = .countdown(value)
                 Haptics.countdownTick()
                 try? await Task.sleep(for: .seconds(1))
@@ -166,7 +173,7 @@ struct TrainIdleView: View {
         formBreakTimestamps = []
         startedAt = Date()
         telemetry = try? TelemetryWriter(sessionID: UUID())
-        camera.startRecording()
+        if settings.recordsVideo { camera.startRecording() }
         phase = .recording
         Haptics.sessionStart()
     }
@@ -191,7 +198,7 @@ struct TrainIdleView: View {
         telemetry = nil
 
         Task {
-            let recording = await camera.stopRecording()
+            let recording = settings.recordsVideo ? await camera.stopRecording() : nil
 
             let session = WorkoutSession(
                 movement: movement,

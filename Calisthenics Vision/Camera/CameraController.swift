@@ -88,11 +88,33 @@ final class CameraController {
 
     // MARK: - Lifecycle
 
-    /// Requests permission if needed, configures the session, and starts it.
+    /// FrameSource conformance — opens with whatever camera is already
+    /// selected. Defaulted parameters don't satisfy a protocol requirement,
+    /// so this stays a distinct entry point from the one below.
     func start() async {
+        await start(position: position, preferUltraWide: lens == .ultraWide)
+    }
+
+    /// Requests permission if needed, configures the session, and starts it.
+    /// - Parameters:
+    ///   - position: which camera to open on.
+    ///   - preferUltraWide: use the 0.5× lens where the hardware has one.
+    func start(
+        position: AVCaptureDevice.Position,
+        preferUltraWide: Bool
+    ) async {
         guard await requestAccess() else {
             status = .unauthorized
             return
+        }
+
+        if !isConfigured {
+            self.position = position
+            // Fall back silently rather than failing to open a camera at all
+            // when the preferred lens doesn't exist on this device.
+            if preferUltraWide, Self.device(at: position, lens: .ultraWide) != nil {
+                lens = .ultraWide
+            }
         }
 
         do {

@@ -10,6 +10,7 @@ import SwiftUI
 struct ProfileView: View {
     @Environment(Entitlements.self) private var entitlements
     @State private var showPaywall = false
+    @State private var settingsSection: SettingsView.Section?
     #if DEBUG
     @State private var showDeveloper = false
     #endif
@@ -55,15 +56,9 @@ struct ProfileView: View {
                 .buttonStyle(.plain)
                 #endif
 
-                Button {
-                    // Wired once auth lands (SPEC.md §Future Roadmap).
-                } label: {
-                    Text("Sign Out")
-                        .font(Theme.Font.body())
-                        .foregroundStyle(Theme.Color.warning)
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 28)
+                // Sign Out returns with authentication (SPEC.md §Future
+                // Roadmap). Until there's an account to sign out of, a button
+                // that does nothing is worse than no button.
             }
             .padding(.horizontal, Theme.Metric.screenPadding)
             .padding(.top, 8)
@@ -72,6 +67,7 @@ struct ProfileView: View {
         .scrollIndicators(.hidden)
         .background(Theme.Color.background)
         .sheet(isPresented: $showPaywall) { PaywallView() }
+        .sheet(item: $settingsSection) { SettingsView(section: $0) }
         #if DEBUG
         .sheet(isPresented: $showDeveloper) { DeveloperSettingsView() }
         #endif
@@ -130,19 +126,21 @@ struct ProfileView: View {
 
     private var settingsRows: some View {
         VStack(spacing: 0) {
-            settingRow("Camera Setup")
+            settingRow("Camera Setup") { settingsSection = .camera }
             separator
-            settingRow("Units")
+            settingRow("Feedback") { settingsSection = .feedback }
             separator
-            settingRow("Audio Coaching", locked: !entitlements.isProUnlocked)
-            separator
-            settingRow("Notifications")
+            settingRow("Storage") { settingsSection = .storage }
         }
     }
 
-    private func settingRow(_ title: String, locked: Bool = false) -> some View {
+    private func settingRow(
+        _ title: String,
+        locked: Bool = false,
+        action: @escaping () -> Void = {}
+    ) -> some View {
         Button {
-            if locked { showPaywall = true }
+            if locked { showPaywall = true } else { action() }
         } label: {
             HStack(spacing: 8) {
                 Text(title)
