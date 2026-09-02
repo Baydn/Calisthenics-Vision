@@ -31,17 +31,27 @@ final class PoseSession {
     @ObservationIgnored private var lastTimestampMs = 0
     @ObservationIgnored private var frameTimes: [Double] = []
 
-    /// Starts detection against the given source.
+    /// Last landmarker failure, surfaced so the UI can say why nothing is
+    /// being detected instead of just showing an empty overlay.
+    private(set) var setupError: String?
+
+    /// Begins detecting on frames from `source`.
+    ///
+    /// The caller owns the source's lifecycle — this only subscribes. That
+    /// keeps the camera's start/stop with the view that presents it, and lets
+    /// a replayed video be scrubbed independently.
     /// - Returns: an error description if the landmarker couldn't be created.
     @discardableResult
-    func start(source: FrameSource) -> String? {
-        stop()
+    func attach(to source: FrameSource) -> String? {
+        detach()
 
         do {
             landmarker = try PoseLandmarkerService(delegate: relay)
         } catch {
-            return error.localizedDescription
+            setupError = error.localizedDescription
+            return setupError
         }
+        setupError = nil
 
         relay.onResult = { [weak self] result, timestampMs in
             Task { @MainActor [weak self] in
@@ -54,18 +64,20 @@ final class PoseSession {
         }
 
         self.source = source
-        Task { await source.start() }
         return nil
     }
 
-    func stop() {
-        source?.stop()
+    /// Stops detecting. Does not stop the underlying source.
+    func detach() {
         source?.onFrame = nil
         source = nil
         landmarker = nil
         smoother.reset()
         pose = nil
+        lastTimestampMs = 0
     }
+
+    func stop() { detach() }
 
     // MARK: - Frame handling
 

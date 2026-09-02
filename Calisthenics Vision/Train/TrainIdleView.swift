@@ -13,6 +13,7 @@ struct TrainIdleView: View {
     @Environment(Entitlements.self) private var entitlements
 
     @State private var camera = CameraController()
+    @State private var poseSession = PoseSession()
     @State private var selected: Movement = .pushUps
     @State private var showLibrary = false
     @State private var showPaywall = false
@@ -28,9 +29,16 @@ struct TrainIdleView: View {
                 movementPicker
                     .padding(.top, 8)
 
+                performanceReadout
+                    .padding(.top, 10)
+
                 Spacer()
 
-                framingHint
+                // Once a pose is being tracked the ghost guide has done its
+                // job — the live skeleton takes over as the framing feedback.
+                if poseSession.pose == nil {
+                    framingHint
+                }
 
                 Spacer()
 
@@ -38,8 +46,16 @@ struct TrainIdleView: View {
                     .padding(.bottom, Theme.Metric.tabBarHeight + 8)
             }
         }
-        .task { await camera.start() }
-        .onDisappear { camera.stop() }
+        .task {
+            await camera.start()
+            if case .running = camera.status {
+                poseSession.attach(to: camera)
+            }
+        }
+        .onDisappear {
+            poseSession.detach()
+            camera.stop()
+        }
         .sheet(isPresented: $showLibrary) {
             MovementLibraryView(selected: $selected)
         }
@@ -51,12 +67,38 @@ struct TrainIdleView: View {
     @ViewBuilder
     private var cameraLayer: some View {
         if case .running = camera.status {
-            CameraPreviewView(session: camera.captureSession)
-                .ignoresSafeArea()
+            ZStack {
+                CameraPreviewView(session: camera.captureSession)
+                PoseOverlayView(pose: poseSession.pose)
+            }
+            .ignoresSafeArea()
         } else {
             Color(red: 0.09, green: 0.09, blue: 0.09)
                 .ignoresSafeArea()
         }
+    }
+
+    /// Debug readout for checking on-device inference speed — the number that
+    /// decides whether pose detection is actually viable in real time.
+    @ViewBuilder
+    private var performanceReadout: some View {
+        #if DEBUG
+        if case .running = camera.status {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(poseSession.pose == nil ? Theme.Color.warning : Theme.Color.valid)
+                    .frame(width: 6, height: 6)
+                Text(poseSession.pose == nil
+                     ? "no pose"
+                     : "\(Int(poseSession.processedFPS)) fps")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Theme.Color.secondaryText)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 24)
+            .background(Theme.Color.card.opacity(0.8), in: .capsule)
+        }
+        #endif
     }
 
     /// Copy under the ghost figure, reflecting why the camera isn't live.
