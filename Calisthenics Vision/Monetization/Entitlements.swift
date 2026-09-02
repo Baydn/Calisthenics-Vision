@@ -70,9 +70,11 @@ final class Entitlements {
     #if DEBUG
     /// Returns the app to a first-launch tier state.
     func resetToNewUser() {
-        UserDefaults.standard.removeObject(forKey: Self.overrideKey)
         tier = .free
         UserDefaults.standard.removeObject(forKey: Self.overrideKey)
+        // Onboarding is part of a first launch, so a simulated new user has
+        // to see it again.
+        UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
     }
     #endif
 }

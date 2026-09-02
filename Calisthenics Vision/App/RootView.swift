@@ -30,9 +30,18 @@ enum AppTab: String, CaseIterable, Hashable {
 }
 
 struct RootView: View {
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var selectedTab: AppTab = .train
 
     var body: some View {
+        if hasCompletedOnboarding {
+            mainInterface
+        } else {
+            OnboardingView()
+        }
+    }
+
+    private var mainInterface: some View {
         ZStack(alignment: .bottom) {
             Theme.Color.background.ignoresSafeArea()
 
