@@ -31,6 +31,10 @@ final class PoseSession {
     /// instead of just showing an empty overlay.
     private(set) var setupError: String?
 
+    /// Called on the main actor with each new pose, for whatever movement
+    /// tracker is currently running.
+    @ObservationIgnored var onPose: ((Pose?, Int) -> Void)?
+
     @ObservationIgnored private var source: FrameSource?
     @ObservationIgnored private let engine = PoseInferenceEngine()
     @ObservationIgnored private var smoother = PoseSmoother()
@@ -46,9 +50,9 @@ final class PoseSession {
     func attach(to source: FrameSource) -> String? {
         detach()
 
-        engine.onResult = { [weak self] result in
+        engine.onResult = { [weak self] result, timestampMs in
             Task { @MainActor [weak self] in
-                self?.ingest(result)
+                self?.ingest(result, timestampMs: timestampMs)
             }
         }
 
@@ -81,19 +85,22 @@ final class PoseSession {
     // MARK: - Results
 
     @MainActor
-    private func ingest(_ result: PoseLandmarkerResult?) {
+    private func ingest(_ result: PoseLandmarkerResult?, timestampMs: Int) {
         recordFrameTime()
 
         guard let landmarks = result?.landmarks.first, !landmarks.isEmpty else {
             pose = nil
             smoother.reset()
+            onPose?(nil, timestampMs)
             return
         }
 
         let points = landmarks.map { CGPoint(x: Double($0.x), y: Double($0.y)) }
         let confidence = landmarks.map { $0.visibility?.floatValue ?? 1 }
 
-        pose = smoother.smooth(Pose(points: points, confidence: confidence))
+        let smoothed = smoother.smooth(Pose(points: points, confidence: confidence))
+        pose = smoothed
+        onPose?(smoothed, timestampMs)
     }
 
     @MainActor
@@ -112,7 +119,7 @@ final class PoseSession {
 private nonisolated final class PoseInferenceEngine: NSObject,
     PoseLandmarkerLiveStreamDelegate, @unchecked Sendable {
 
-    var onResult: ((PoseLandmarkerResult?) -> Void)?
+    var onResult: ((PoseLandmarkerResult?, Int) -> Void)?
 
     private let lock = NSLock()
     private var landmarker: PoseLandmarkerService?
@@ -165,6 +172,6 @@ private nonisolated final class PoseInferenceEngine: NSObject,
         timestampInMilliseconds: Int,
         error: Error?
     ) {
-        onResult?(result)
+        onResult?(result, timestampInMilliseconds)
     }
 }

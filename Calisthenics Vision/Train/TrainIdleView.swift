@@ -14,6 +14,9 @@ struct TrainIdleView: View {
 
     @State private var camera = CameraController()
     @State private var poseSession = PoseSession()
+    @State private var tracker = PushUpTracker()
+    @State private var progress = MovementProgress()
+    @State private var lastEvent: FormIssue?
     @State private var selected: Movement = .pushUps
     @State private var showLibrary = false
     @State private var showPaywall = false
@@ -40,9 +43,11 @@ struct TrainIdleView: View {
                 Spacer()
 
                 // Once a pose is being tracked the ghost guide has done its
-                // job — the live skeleton takes over as the framing feedback.
+                // job — the live skeleton and counter take over.
                 if poseSession.pose == nil {
                     framingHint
+                } else {
+                    repCounter
                 }
 
                 Spacer()
@@ -52,6 +57,25 @@ struct TrainIdleView: View {
             }
         }
         .task {
+            poseSession.onPose = { pose, timestampMs in
+                let event = tracker.update(pose: pose, timestampMs: timestampMs)
+                progress = tracker.progress
+
+                switch event {
+                case .repCompleted:
+                    // Haptic + sound land here once the feedback layer exists
+                    // (SPEC.md §5) — the count shouldn't need to be watched.
+                    Haptics.repCounted()
+                case .formBreak(let issue):
+                    lastEvent = issue
+                    Haptics.formBreak()
+                case .formRecovered:
+                    lastEvent = nil
+                case nil:
+                    break
+                }
+            }
+
             await camera.start()
             if case .running = camera.status {
                 poseSession.attach(to: camera)
@@ -74,13 +98,36 @@ struct TrainIdleView: View {
         if case .running = camera.status {
             ZStack {
                 CameraPreviewView(session: camera.captureSession)
-                PoseOverlayView(pose: poseSession.pose)
+                PoseOverlayView(pose: poseSession.pose, isFormValid: progress.isFormValid)
             }
             .ignoresSafeArea()
         } else {
             Color(red: 0.09, green: 0.09, blue: 0.09)
                 .ignoresSafeArea()
         }
+    }
+
+    /// Rep count at glanceable size, plus any active form warning.
+    private var repCounter: some View {
+        VStack(spacing: 12) {
+            Text("\(progress.reps)")
+                .font(Theme.Font.hudCounter())
+                .foregroundStyle(Theme.Color.primaryText)
+                .contentTransition(.numericText())
+                .animation(.snappy(duration: 0.25), value: progress.reps)
+                .shadow(color: .black.opacity(0.5), radius: 8)
+
+            if let lastEvent {
+                Text(lastEvent.rawValue)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Theme.Color.warning)
+                    .padding(.horizontal, 16)
+                    .frame(height: 34)
+                    .background(.black.opacity(0.45), in: .capsule)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.snappy(duration: 0.2), value: lastEvent)
     }
 
     /// Front/back toggle. Front is usually what you want with the phone
