@@ -16,6 +16,7 @@ breaks, and log synchronized video telemetry for calisthenics training.
 | Math & State Engine | Vector dot products for 2D joint-angle extraction, EMA keypoint smoothing, deterministic finite state machines for rep/hold detection |
 | Local Persistence | SQLite (indexed timestamps, joint-angle telemetry logs, MP4 file references) |
 | Monetization | StoreKit 2 / RevenueCat |
+| Feedback | `UIImpactFeedbackGenerator` / `UINotificationFeedbackGenerator` (haptics), `AVAudioPlayer` (short cue sounds), `AVSpeechSynthesizer` (Pro real-time audio coaching) |
 
 ## Core Feature Set
 
@@ -49,6 +50,24 @@ breaks, and log synchronized video telemetry for calisthenics training.
 |---|---|---|
 | Free | $0 | Unlimited push-up and handstand tracking, basic rep/hold counters, 7-day local history |
 | Pro | $4.99/mo | Expanded movements (planche, pull-ups, muscle-ups, L-sits), tempo analytics, real-time audio coaching, long-term progression graphs, cloud sync |
+
+### 5. Multisensory Feedback
+Since the HUD is designed to be glanceable from 6–10 feet, feedback shouldn't
+depend on the user looking directly at the screen — haptic, sound, and
+animation should fire together as one bundle per event, not in isolation.
+
+- **Haptics** — `UIImpactFeedbackGenerator` for a light tap on each completed
+  rep; `UINotificationFeedbackGenerator` (success/warning) for a completed
+  hold or a form-break warning.
+- **Sound** — short pre-recorded cues (rep ding, PR chime) via
+  `AVAudioPlayer`/`AudioServicesPlaySystemSound`. Distinct from the Pro
+  **real-time audio coaching** feature, which uses `AVSpeechSynthesizer` to
+  generate spoken cues (rep counts, form corrections) on the fly rather than
+  playing fixed clips.
+- **Animation** — since the HUD overlay is already a SwiftUI `Canvas`, most
+  of this is native: `withAnimation`/spring animation for a scale-bounce on
+  the rep counter, and color transitions between the `#00FF66` valid-form
+  and `#FF3366` warning-form skeleton strokes.
 
 ## Future Roadmap & Backend Integrations
 - **Database & Auth** — Supabase / PostgreSQL (Apple/Google Sign-In, profile

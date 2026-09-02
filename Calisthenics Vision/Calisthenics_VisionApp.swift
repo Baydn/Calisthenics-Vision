@@ -9,9 +9,12 @@ import SwiftUI
 
 @main
 struct Calisthenics_VisionApp: App {
+    @State private var entitlements = Entitlements()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootView()
+                .environment(entitlements)
         }
     }
 }
