@@ -51,7 +51,7 @@ struct HistoryView: View {
                     switch tab {
                     case .list:     HistoryListView(sessions: sessions)
                     case .calendar: HistoryCalendarView(sessions: sessions)
-                    case .progress: HistoryProgressView(stats: stats)
+                    case .progress: HistoryProgressView(sessions: sessions, stats: stats)
                     }
                 }
             }
