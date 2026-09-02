@@ -25,6 +25,11 @@ struct Calisthenics_VisionApp: App {
             RootView()
                 .environment(entitlements)
                 .task {
+                    // Reconcile with the App Store before anything reads the
+                    // tier — pruning below depends on it, and using the wrong
+                    // window would delete a paying subscriber's history.
+                    await entitlements.refresh()
+
                     #if DEBUG
                     SampleSessions.seedIfEmpty(container.mainContext)
                     #endif

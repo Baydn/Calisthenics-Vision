@@ -34,7 +34,27 @@ final class Entitlements {
         didSet { persistOverride() }
     }
 
-    var isProUnlocked: Bool { tier == .pro }
+    /// Live subscription state. This is the source of truth in release builds.
+    let store = SubscriptionStore()
+
+    /// Whether Pro features are available.
+    ///
+    /// A real subscription always unlocks. In debug builds the tier switch can
+    /// also unlock, so gated screens can be exercised without buying anything
+    /// — but that path is compiled out of release, where only the store
+    /// decides.
+    var isProUnlocked: Bool {
+        #if DEBUG
+        return store.hasPro || tier == .pro
+        #else
+        return store.hasPro
+        #endif
+    }
+
+    /// Loads products and reconciles entitlement with the App Store.
+    func refresh() async {
+        await store.load()
+    }
 
     /// Free tier keeps a rolling 7-day local history (SPEC.md §4).
     var historyWindowDays: Int? { isProUnlocked ? nil : 7 }
@@ -52,10 +72,15 @@ final class Entitlements {
         isProUnlocked || !movement.isPro
     }
 
-    // Placeholder purchase hooks so the UI can be wired now and swapped for
-    // real StoreKit calls later.
-    func purchasePro() { tier = .pro }
-    func restorePurchases() {}
+    /// - Returns: true if Pro is active afterwards.
+    @discardableResult
+    func purchasePro() async -> Bool {
+        await store.purchase()
+    }
+
+    func restorePurchases() async {
+        await store.restore()
+    }
 
     // MARK: - Debug persistence
 

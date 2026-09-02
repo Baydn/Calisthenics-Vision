@@ -10,6 +10,7 @@ import SwiftUI
 struct PaywallView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(Entitlements.self) private var entitlements
+    @State private var purchaseFailed: String?
 
     private let features = [
         "Planche, Pull-Up & Muscle-Up tracking",
@@ -54,10 +55,35 @@ struct PaywallView: View {
                 priceCard
                     .padding(.bottom, 16)
 
-                PrimaryButton(title: "Start Free Trial") {
-                    entitlements.purchasePro()
-                    dismiss()
+                PrimaryButton(title: buttonTitle) {
+                    Task {
+                        let unlocked = await entitlements.purchasePro()
+                        if unlocked {
+                            dismiss()
+                        } else if let error = entitlements.store.lastError {
+                            purchaseFailed = error
+                        }
+                        // A cancelled purchase reports nothing and simply
+                        // leaves the paywall open.
+                    }
                 }
+                .disabled(entitlements.store.isPurchasing)
+                .overlay {
+                    if entitlements.store.isPurchasing {
+                        ProgressView().tint(Theme.Color.background)
+                    }
+                }
+
+                Button("Restore Purchases") {
+                    Task {
+                        await entitlements.restorePurchases()
+                        if entitlements.isProUnlocked { dismiss() }
+                    }
+                }
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(Theme.Color.secondaryText)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 14)
 
                 Text("Cancel anytime. Auto-renews unless cancelled.")
                     .font(.system(size: 12, weight: .regular))
@@ -80,6 +106,31 @@ struct PaywallView: View {
             .padding(.trailing, Theme.Metric.screenPadding)
         }
         .preferredColorScheme(.dark)
+        .task { await entitlements.refresh() }
+        .alert(
+            "Purchase failed",
+            isPresented: .init(
+                get: { purchaseFailed != nil },
+                set: { if !$0 { purchaseFailed = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { purchaseFailed = nil }
+        } message: {
+            Text(purchaseFailed ?? "")
+        }
+    }
+
+    private var buttonTitle: String {
+        entitlements.store.introOfferDescription == nil ? "Subscribe" : "Start Free Trial"
+    }
+
+    /// Describes the intro offer from the store, or states the plain terms
+    /// when there isn't one. Never promises a trial the product doesn't have.
+    private var trialCopy: String {
+        if let intro = entitlements.store.introOfferDescription {
+            return "\(intro) \(entitlements.store.displayPrice) per month"
+        }
+        return "\(entitlements.store.displayPrice) per month, cancel anytime"
     }
 
     private var priceCard: some View {
@@ -88,14 +139,14 @@ struct PaywallView: View {
                 Text("Monthly")
                     .font(.system(size: 17, weight: .bold))
                     .foregroundStyle(Theme.Color.primaryText)
-                Text("7-day free trial, then billed monthly")
+                Text(trialCopy)
                     .font(.system(size: 13, weight: .regular))
                     .foregroundStyle(Theme.Color.secondaryText)
             }
 
             Spacer()
 
-            Text("$4.99/mo")
+            Text("\(entitlements.store.displayPrice)/mo")
                 .font(.system(size: 20, weight: .bold))
                 .foregroundStyle(Theme.Color.primaryText)
         }
