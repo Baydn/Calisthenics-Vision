@@ -54,6 +54,27 @@ struct SessionReviewView: View {
         )
     }
 
+    /// Event positions along the timeline, as fractions of the duration.
+    private var markers: [(offset: Int, fraction: CGFloat, isBreak: Bool)] {
+        guard duration > 0 else { return [] }
+        let base = session.videoStartMs ?? 0
+
+        func fraction(_ timestampMs: Int) -> CGFloat? {
+            let seconds = Double(timestampMs - base) / 1000
+            guard seconds >= 0, seconds <= duration else { return nil }
+            return CGFloat(seconds / duration)
+        }
+
+        let reps = session.repTimestampsMs.compactMap { fraction($0) }
+            .map { (fraction: $0, isBreak: false) }
+        let breaks = session.formBreakTimestampsMs.compactMap { fraction($0) }
+            .map { (fraction: $0, isBreak: true) }
+
+        return (reps + breaks).enumerated().map {
+            (offset: $0.offset, fraction: $0.element.fraction, isBreak: $0.element.isBreak)
+        }
+    }
+
     var body: some View {
         ZStack {
             Theme.Color.background.ignoresSafeArea()
@@ -197,6 +218,17 @@ struct SessionReviewView: View {
                     Capsule()
                         .fill(Theme.Color.card)
                         .frame(height: 4)
+
+                    // Event markers: green where a rep completed, red where
+                    // form broke. These are why the timeline is worth
+                    // scrubbing at all — you can go straight to the moment
+                    // rather than hunting for it.
+                    ForEach(markers, id: \.offset) { marker in
+                        Capsule()
+                            .fill(marker.isBreak ? Theme.Color.warning : Theme.Color.valid)
+                            .frame(width: 2, height: 12)
+                            .offset(x: marker.fraction * (width - 2))
+                    }
 
                     Circle()
                         .fill(Theme.Color.primaryText)

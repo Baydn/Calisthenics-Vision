@@ -34,6 +34,12 @@ final class WorkoutSession {
     /// Review needs it to turn a playback position into a telemetry lookup.
     var videoStartMs: Int?
 
+    /// Capture-clock instants where a rep completed, and where form broke.
+    /// These become the markers on the review scrubber, so you can jump
+    /// straight to the moment something happened instead of hunting for it.
+    var repTimestampsMs: [Int] = []
+    var formBreakTimestampsMs: [Int] = []
+
     init(
         id: UUID = UUID(),
         movement: Movement,
@@ -43,7 +49,9 @@ final class WorkoutSession {
         formBreaks: Int = 0,
         videoFileName: String? = nil,
         telemetryFileName: String? = nil,
-        videoStartMs: Int? = nil
+        videoStartMs: Int? = nil,
+        repTimestampsMs: [Int] = [],
+        formBreakTimestampsMs: [Int] = []
     ) {
         self.id = id
         self.movement = movement
@@ -54,6 +62,8 @@ final class WorkoutSession {
         self.videoFileName = videoFileName
         self.telemetryFileName = telemetryFileName
         self.videoStartMs = videoStartMs
+        self.repTimestampsMs = repTimestampsMs
+        self.formBreakTimestampsMs = formBreakTimestampsMs
     }
 }
 

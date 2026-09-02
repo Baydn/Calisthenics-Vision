@@ -37,6 +37,8 @@ struct TrainIdleView: View {
     @State private var elapsed: TimeInterval = 0
     @State private var countdownTask: Task<Void, Never>?
     @State private var telemetry: TelemetryWriter?
+    @State private var repTimestamps: [Int] = []
+    @State private var formBreakTimestamps: [Int] = []
 
     @State private var selected: Movement = .pushUps
     @State private var showLibrary = false
@@ -113,12 +115,14 @@ struct TrainIdleView: View {
 
         switch event {
         case .repCompleted:
+            if phase == .recording { repTimestamps.append(timestampMs) }
             Haptics.repCounted()
         case .holdTick:
             // A quiet pulse each second, so a hold can be timed without
             // looking at the screen — which is the whole point upside down.
             Haptics.holdTick()
         case .formBreak(let issue):
+            if phase == .recording { formBreakTimestamps.append(timestampMs) }
             lastEvent = issue
             Haptics.formBreak()
         case .formRecovered:
@@ -158,6 +162,8 @@ struct TrainIdleView: View {
         progress = tracker?.progress ?? MovementProgress()
         lastEvent = nil
         elapsed = 0
+        repTimestamps = []
+        formBreakTimestamps = []
         startedAt = Date()
         telemetry = try? TelemetryWriter(sessionID: UUID())
         camera.startRecording()
@@ -178,6 +184,8 @@ struct TrainIdleView: View {
         // not how long the recording ran.
         let holdSeconds = tracker?.progress.holdDuration ?? 0
         let telemetryName = telemetry?.fileName
+        let repMarks = repTimestamps
+        let breakMarks = formBreakTimestamps
 
         telemetry?.finish()
         telemetry = nil
@@ -193,7 +201,9 @@ struct TrainIdleView: View {
                 formBreaks: breaks,
                 videoFileName: recording?.url.lastPathComponent,
                 telemetryFileName: telemetryName,
-                videoStartMs: recording?.firstFrameTimestampMs
+                videoStartMs: recording?.firstFrameTimestampMs,
+                repTimestampsMs: repMarks,
+                formBreakTimestampsMs: breakMarks
             )
             modelContext.insert(session)
             try? modelContext.save()
