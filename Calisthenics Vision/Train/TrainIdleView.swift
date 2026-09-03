@@ -144,10 +144,12 @@ struct TrainIdleView: View {
             // out of the way of the shutter.
             // Held clear of the flip button below it — at the vertical centre
             // these collided on shorter screens.
+            //
+            // Trailing-aligned so the timer can widen when it opens without
+            // shoving the button below it sideways.
             HStack {
                 Spacer()
-                VStack(spacing: 12) {
-                    audioButton
+                VStack(alignment: .trailing, spacing: 12) {
                     timerButton
                     tuneButton
                 }
@@ -187,8 +189,7 @@ struct TrainIdleView: View {
 
             HStack {
                 Spacer()
-                VStack(spacing: 12) {
-                    audioButton
+                VStack(alignment: .trailing, spacing: 12) {
                     timerButton
                     tuneButton
                     lensButton
@@ -756,35 +757,6 @@ struct TrainIdleView: View {
         }
     }
 
-    /// Coaching is toggled here rather than buried in Settings: it's decided
-    /// on the way into a set, and it's the kind of thing you want off the
-    /// moment someone walks into the room.
-    private var audioButton: some View {
-        Button {
-            settings.audioCoaching.toggle()
-            if settings.audioCoaching {
-                AudioCoach.shared.begin()
-                AudioCoach.shared.setFinished(summary: "Coaching on")
-            } else {
-                AudioCoach.shared.end()
-            }
-        } label: {
-            Image(systemName: settings.audioCoaching
-                  ? "speaker.wave.2.fill" : "speaker.slash.fill")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(settings.audioCoaching
-                                 ? Theme.Color.background : Theme.Color.primaryText)
-                .frame(width: 36, height: 36)
-                .background(
-                    settings.audioCoaching
-                        ? AnyShapeStyle(Theme.Color.primaryText)
-                        : AnyShapeStyle(Theme.Color.card.opacity(0.8)),
-                    in: .circle
-                )
-        }
-        .buttonStyle(.plain)
-    }
-
     /// Countdown length. Tapping opens the choices rather than cycling
     /// through them — with four values, cycling means up to three taps and a
     /// wrong guess to land on the one you wanted.
@@ -847,8 +819,10 @@ struct TrainIdleView: View {
 
     private static let countdownOptions = [0, 3, 5, 10]
 
-    /// Per-movement tuning. Currently coaching detail and push-up depth;
-    /// this is where movement-specific settings accumulate.
+    /// Everything about how this movement is coached and counted — spoken
+    /// coaching included. Coaching had its own button here, which was a
+    /// second place to change one setting; it belongs with the rest of the
+    /// per-movement controls rather than beside them.
     private var tuneButton: some View {
         Button { showMovementSettings = true } label: {
             Image(systemName: "slider.horizontal.3")
