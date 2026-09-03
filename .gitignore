@@ -1,8 +1,10 @@
-# Personal project notes and strategy — not for the public repo.
+# Personal notes, strategy and planning — not for the public repo.
 # ROADMAP.md names competitors' weaknesses, where this app is behind, and
-# unmade pricing decisions. That is planning material, not documentation.
+# unmade pricing decisions. BACKLOG.md is the unshipped feature plan. Both
+# are planning material, not documentation.
 CLAUDE.md
 ROADMAP.md
+BACKLOG.md
 
 # Xcode
 xcuserdata/
