@@ -4,21 +4,28 @@
 //
 //  SwiftUI wrapper around AVCaptureVideoPreviewLayer.
 //
+//  This view is also where rotation is decided. UIKit lays it out exactly
+//  when the interface rotates, so reading the interface orientation here
+//  needs no orientation notifications and can't miss one. The same angle is
+//  handed to the capture connection, because the skeleton overlay is drawn
+//  over this preview from landmarks measured in the capture buffers — if the
+//  two rotations disagreed the skeleton would sit rotated off the body.
+//
 
 import AVFoundation
 import SwiftUI
 
 struct CameraPreviewView: UIViewRepresentable {
     let session: AVCaptureSession
-    /// Degrees clockwise, from the camera's rotation coordinator, so the
-    /// preview stays upright when the phone is turned on its side.
-    var rotationAngle: CGFloat = 90
+    /// Receives the interface's rotation angle so captured frames match what
+    /// is on screen.
+    var onRotationChange: ((CGFloat) -> Void)?
 
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
         view.previewLayer.session = session
         view.previewLayer.videoGravity = .resizeAspectFill
-        apply(rotationAngle, to: view)
+        view.onRotationChange = onRotationChange
         return view
     }
 
@@ -26,15 +33,7 @@ struct CameraPreviewView: UIViewRepresentable {
         if uiView.previewLayer.session !== session {
             uiView.previewLayer.session = session
         }
-        apply(rotationAngle, to: uiView)
-    }
-
-    private func apply(_ angle: CGFloat, to view: PreviewView) {
-        guard let connection = view.previewLayer.connection,
-              connection.isVideoRotationAngleSupported(angle),
-              connection.videoRotationAngle != angle
-        else { return }
-        connection.videoRotationAngle = angle
+        uiView.onRotationChange = onRotationChange
     }
 
     /// Backing view whose layer *is* the preview layer, so it resizes with
@@ -44,6 +43,33 @@ struct CameraPreviewView: UIViewRepresentable {
 
         var previewLayer: AVCaptureVideoPreviewLayer {
             layer as! AVCaptureVideoPreviewLayer
+        }
+
+        var onRotationChange: ((CGFloat) -> Void)?
+
+        private var appliedAngle: CGFloat?
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            applyRotation()
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            applyRotation()
+        }
+
+        private func applyRotation() {
+            guard let orientation = window?.windowScene?.interfaceOrientation else { return }
+            let angle = CameraController.rotationAngle(for: orientation)
+            guard angle != appliedAngle else { return }
+            appliedAngle = angle
+
+            if let connection = previewLayer.connection,
+               connection.isVideoRotationAngleSupported(angle) {
+                connection.videoRotationAngle = angle
+            }
+            onRotationChange?(angle)
         }
     }
 }

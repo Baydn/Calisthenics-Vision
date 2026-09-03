@@ -315,9 +315,17 @@ struct TrainIdleView: View {
             ZStack {
                 CameraPreviewView(
                     session: camera.captureSession,
-                    rotationAngle: camera.previewRotationAngle
+                    onRotationChange: { camera.setRotation($0) }
                 )
-                PoseOverlayView(pose: poseSession.pose, isFormValid: progress.isFormValid)
+                // The frames physically rotate with the interface, so the
+                // overlay has to use the pose's own aspect rather than
+                // assuming portrait — otherwise the skeleton lands beside
+                // the body in landscape.
+                PoseOverlayView(
+                    pose: poseSession.pose,
+                    isFormValid: progress.isFormValid,
+                    sourceAspect: poseSession.pose?.aspect ?? 9.0 / 16.0
+                )
             }
             .ignoresSafeArea()
         } else {

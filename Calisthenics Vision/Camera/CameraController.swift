@@ -21,6 +21,7 @@
 @preconcurrency import AVFoundation
 import CoreMedia
 import Observation
+import UIKit
 
 @Observable
 final class CameraController {
@@ -64,11 +65,6 @@ final class CameraController {
     /// generally don't have one.
     private(set) var hasUltraWide = false
 
-    /// Rotation the preview layer should apply, in degrees clockwise.
-    /// Published so `CameraPreviewView` can follow the device without
-    /// duplicating the orientation bookkeeping.
-    private(set) var previewRotationAngle: CGFloat = 90
-
     /// Receives every frame on the capture queue, with the frame's
     /// presentation timestamp in milliseconds.
     func setFrameHandler(_ handler: (@Sendable (CMSampleBuffer, Int) -> Void)?) {
@@ -88,11 +84,9 @@ final class CameraController {
     @ObservationIgnored private var videoInput: AVCaptureDeviceInput?
     @ObservationIgnored private var isConfigured = false
 
-    /// Tracks which way is up so the app can be used in landscape — filming a
-    /// planche or a side-on push-up is a landscape job, and a portrait-locked
-    /// capture would letterbox the one axis the movement happens along.
-    @ObservationIgnored private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
-    @ObservationIgnored private var rotationObservations: [NSKeyValueObservation] = []
+    /// Rotation currently applied to captured frames, in degrees clockwise.
+    /// Portrait until the preview view reports otherwise.
+    @ObservationIgnored private var rotationAngle: CGFloat = 90
 
     /// Exposed so the preview layer can attach to the same session.
     var captureSession: AVCaptureSession { session }
@@ -171,7 +165,7 @@ final class CameraController {
     private func use(position target: AVCaptureDevice.Position, lens targetLens: Lens) async {
         guard let device = Self.device(at: target, lens: targetLens) else { return }
 
-        let rotationAngle = captureRotationAngle
+        let rotationAngle = rotationAngle
         let succeeded = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
             sessionQueue.async { [session, output, videoInput] in
                 guard let newInput = try? AVCaptureDeviceInput(device: device) else {
@@ -210,7 +204,6 @@ final class CameraController {
         lens = targetLens
         hasUltraWide = Self.device(at: target, lens: .ultraWide) != nil
         dimensions = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
-        observeRotation(for: device)
     }
 
     // MARK: - Recording
@@ -307,52 +300,60 @@ final class CameraController {
 
     // MARK: - Rotation
 
-    /// Follows the device with `AVCaptureDevice.RotationCoordinator`, which
-    /// reports the angle that keeps the horizon level — rather than mapping
-    /// interface orientations by hand, which is the part everyone gets wrong.
-    private func observeRotation(for device: AVCaptureDevice) {
-        rotationObservations.removeAll()
-        let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
-        rotationCoordinator = coordinator
-
-        applyRotation(
-            capture: coordinator.videoRotationAngleForHorizonLevelCapture,
-            preview: coordinator.videoRotationAngleForHorizonLevelPreview
-        )
-
-        rotationObservations = [
-            coordinator.observe(\.videoRotationAngleForHorizonLevelCapture, options: [.new]) {
-                [weak self] coordinator, _ in
-                Task { @MainActor [weak self] in
-                    self?.applyRotation(
-                        capture: coordinator.videoRotationAngleForHorizonLevelCapture,
-                        preview: coordinator.videoRotationAngleForHorizonLevelPreview
-                    )
-                }
-            }
-        ]
+    /// Video rotation angle for an interface orientation.
+    ///
+    /// Rotation follows the *interface*, not gravity. Two reasons, and the
+    /// second is the one that bites:
+    ///
+    /// 1. Rotation lock should be honoured — a locked-portrait UI keeps a
+    ///    portrait camera rather than swinging round when you tilt the phone.
+    /// 2. The skeleton overlay is drawn over the preview using landmarks
+    ///    measured from the capture buffers. Preview and capture must share
+    ///    one angle or the skeleton sits rotated off the body.
+    ///
+    /// `AVCaptureDevice.RotationCoordinator` answers a different question —
+    /// what keeps the *horizon* level relative to gravity — and its preview
+    /// angle is documented to return 0 unless it was built with a preview
+    /// layer that is already in a view hierarchy. Built with nil, as it was
+    /// here, it reported 0 forever: the native sensor orientation, which is
+    /// landscape. That is why the preview came up sideways in portrait and
+    /// upside down in one of the two landscape directions.
+    ///
+    /// The angles below are anchored on the one value AVFoundation documents
+    /// outright — a portrait interface needs 90 — with each 90° of interface
+    /// rotation adding or removing 90 from there.
+    ///
+    /// Note this maps `UIInterfaceOrientation`, not `UIDeviceOrientation`:
+    /// the two define landscapeLeft/Right opposite to each other.
+    static func rotationAngle(for orientation: UIInterfaceOrientation) -> CGFloat {
+        switch orientation {
+        case .portrait:           90
+        case .portraitUpsideDown: 270
+        case .landscapeLeft:      180
+        case .landscapeRight:     0
+        default:                  90
+        }
     }
 
-    private func applyRotation(capture: CGFloat, preview: CGFloat) {
+    /// Applies the interface's rotation to captured frames.
+    ///
+    /// Called by the preview view, which is laid out exactly when the
+    /// interface rotates — so there's no orientation notification to miss.
+    func setRotation(_ angle: CGFloat) {
         // An asset writer's dimensions are fixed once the first frame lands,
-        // so rotating mid-take would produce frames the writer can't accept.
-        // Hold the angle for the duration of the recording instead.
-        guard !isRecording else { return }
+        // so rotating mid-take would produce frames it can't accept. Hold the
+        // angle for the duration of the recording instead.
+        guard !isRecording, angle != rotationAngle else { return }
+        rotationAngle = angle
 
-        previewRotationAngle = preview
         let position = position
         sessionQueue.async { [output] in
             Self.configureConnection(
                 output.connection(with: .video),
                 position: position,
-                rotationAngle: capture
+                rotationAngle: angle
             )
         }
-    }
-
-    /// The angle currently applied to captured frames.
-    private var captureRotationAngle: CGFloat {
-        rotationCoordinator?.videoRotationAngleForHorizonLevelCapture ?? 90
     }
 
     private func configureIfNeeded() async throws {
@@ -385,7 +386,7 @@ final class CameraController {
         output.alwaysDiscardsLateVideoFrames = true
 
         let position = position
-        let rotationAngle = captureRotationAngle
+        let rotationAngle = rotationAngle
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             sessionQueue.async { [session, output] in
                 session.beginConfiguration()
@@ -415,7 +416,6 @@ final class CameraController {
 
         videoInput = input
         dimensions = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
-        observeRotation(for: device)
         isConfigured = true
     }
 }
