@@ -39,6 +39,7 @@ struct PostCard: View {
     var example: Example?
     var onComment: (() -> Void)?
     var onShare: (() -> Void)?
+    var onOpenAuthor: (() -> Void)?
 
     @Environment(\.modelContext) private var modelContext
     @State private var showBreakdown = false
@@ -47,12 +48,15 @@ struct PostCard: View {
     @State private var notifyOnPost = false
     @State private var isFollowing = true
     @State private var isMuted = false
+    @State private var showLikes = false
 
     private var sets: [WorkoutSession] { post?.sessions(from: sessions) ?? [] }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
+                .contentShape(.rect)
+                .onTapGesture { onOpenAuthor?() }
             if !captionText.isEmpty { caption }
             if example?.hasClip == true { clip }
             headline
@@ -62,6 +66,7 @@ struct PostCard: View {
         }
         .padding(14)
         .background(Theme.Color.card, in: .rect(cornerRadius: Theme.Metric.cardRadius))
+        .sheet(isPresented: $showLikes) { LikesView(count: likeTotal) }
     }
 
     // MARK: - Pieces
@@ -259,6 +264,7 @@ struct PostCard: View {
     @ViewBuilder
     private var likedBy: some View {
         if likeTotal > 0 {
+            Button { showLikes = true } label: {
             HStack(spacing: 8) {
                 HStack(spacing: -8) {
                     ForEach(Array(likerInitials.enumerated()), id: \.offset) { _, initial in
@@ -275,6 +281,9 @@ struct PostCard: View {
                     .foregroundStyle(Theme.Color.secondaryText)
                 Spacer(minLength: 0)
             }
+            .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
         }
     }
 

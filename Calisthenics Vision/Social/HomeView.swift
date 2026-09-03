@@ -32,6 +32,7 @@ struct HomeView: View {
     @State private var showMessages = false
     @State private var showComments = false
     @State private var showShare = false
+    @State private var showAddWorkout = false
 
     @Query(sort: \Post.createdAt, order: .reverse) private var posts: [Post]
     @Query private var sessions: [WorkoutSession]
@@ -66,6 +67,11 @@ struct HomeView: View {
                     .buttonStyle(.plain)
 
                     Spacer(minLength: 0)
+
+                    Button { showAddWorkout = true } label: {
+                        headerButton("plus", label: "New workout")
+                    }
+                    .buttonStyle(.plain)
 
                     Button { showNotifications = true } label: {
                         headerButton("bell.fill", label: "Notifications", badge: 3)
@@ -109,6 +115,7 @@ struct HomeView: View {
         .sheet(isPresented: $showMessages) { MessagesView() }
         .sheet(isPresented: $showComments) { CommentsView() }
         .sheet(isPresented: $showShare) { SharePostView() }
+        .sheet(isPresented: $showAddWorkout) { WorkoutBuilderView() }
     }
 
     private func headerButton(_ symbol: String, label: String, badge: Int = 0) -> some View {
@@ -155,7 +162,8 @@ struct HomeView: View {
                     hasClip: true, likeCount: 14, commentCount: 3
                 ),
                 onComment: { showComments = true },
-                onShare: { showShare = true }
+                onShare: { showShare = true },
+                onOpenAuthor: { showProfile = true }
             )
             PostCard(
                 author: "jonas_b",
@@ -165,7 +173,8 @@ struct HomeView: View {
                     likeCount: 8, commentCount: 1
                 ),
                 onComment: { showComments = true },
-                onShare: { showShare = true }
+                onShare: { showShare = true },
+                onOpenAuthor: { showProfile = true }
             )
             PostCard(
                 author: "rina.hs",
@@ -175,7 +184,8 @@ struct HomeView: View {
                     hasClip: true, likeCount: 31, commentCount: 6
                 ),
                 onComment: { showComments = true },
-                onShare: { showShare = true }
+                onShare: { showShare = true },
+                onOpenAuthor: { showProfile = true }
             )
         }
     }
