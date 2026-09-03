@@ -10,6 +10,11 @@
 //  the same reason. Identity, records, achievements and every session now sit
 //  together, and settings move behind a gear because they're visited rarely.
 //
+//  The header is kept short on purpose. Everything in it competes with the
+//  session list for the top of the screen, and the list is what the tab is
+//  for — so identity is one line, the numbers are one row, and achievements
+//  are a count you tap rather than a shelf you scroll past.
+//
 
 import SwiftData
 import SwiftUI
@@ -85,106 +90,97 @@ struct YouView: View {
 
     // MARK: - Header
 
+    /// Kept deliberately short. Everything here competes with the session list
+    /// for the top of the screen, and the list is what the tab is for — so
+    /// identity is one line, the numbers are one row, and achievements are a
+    /// count you tap rather than a shelf you scroll.
     private var header: some View {
-        VStack(spacing: isCompact ? 12 : 18) {
-            HStack(alignment: .center, spacing: 14) {
-                Circle()
-                    .fill(Theme.Color.card)
-                    .frame(width: isCompact ? 40 : 52, height: isCompact ? 40 : 52)
-                    .overlay {
-                        Image(systemName: "person.fill")
-                            .font(.system(size: isCompact ? 18 : 23))
-                            .foregroundStyle(Theme.Color.secondaryText)
-                    }
+        VStack(spacing: isCompact ? 12 : 16) {
+            identity
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Baydon")
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundStyle(Theme.Color.primaryText)
-                    HStack(spacing: 8) {
-                        Text(entitlements.isProUnlocked ? "PRO" : "FREE")
-                            .cardLabelStyle()
-                        if stats.dayStreak > 0 {
-                            HStack(spacing: 4) {
-                                Image(systemName: "flame.fill")
-                                    .font(.system(size: 10, weight: .semibold))
-                                Text("\(stats.dayStreak) day streak")
-                                    .font(.system(size: 12, weight: .semibold))
-                            }
-                            .foregroundStyle(Theme.Color.valid)
-                        }
-                    }
-                }
-
-                Spacer(minLength: 0)
-
-                Menu {
-                    Button("Feedback") { settingsSection = .feedback }
-                    Button("Storage") { settingsSection = .storage }
-                    if !entitlements.isProUnlocked {
-                        Button("Upgrade to Pro") { showPaywall = true }
-                    }
-                    #if DEBUG
-                    Divider()
-                    Button("Developer") { showDeveloper = true }
-                    #endif
-                } label: {
-                    Image(systemName: "gearshape.fill")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Theme.Color.secondaryText)
-                        .frame(width: 36, height: 36)
-                        .background(Theme.Color.card, in: .circle)
-                }
-            }
-
-            if !isCompact {
-                HStack(spacing: 8) {
-                    StatCard(value: "\(stats.totalSessions)", label: "SESSIONS")
-                    if stats.repsThisWeek == 0 && stats.holdTimeThisWeek > 0 {
-                        StatCard(
-                            value: SessionResult.durationLabel(stats.holdTimeThisWeek),
-                            label: "HELD THIS WK"
-                        )
-                    } else {
-                        StatCard(value: "\(stats.repsThisWeek)", label: "REPS THIS WK")
-                    }
-                    StatCard(value: "\(stats.totalReps)", label: "TOTAL REPS")
-                }
-
-                achievements
-            }
+            if !isCompact { summaryRow }
 
             SegmentedControl(segments: Section.allCases, title: \.rawValue, selection: $section)
         }
     }
 
-    private var achievements: some View {
-        let earned = Achievements.earned(in: context)
-        let next = Achievements.locked(in: context).prefix(2)
-
-        return VStack(alignment: .leading, spacing: 8) {
-            Button { showAllAchievements = true } label: {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("ACHIEVEMENTS")
-                        .sectionHeaderStyle()
-                    Spacer()
-                    Text("\(earned.count) EARNED")
-                        .cardLabelStyle()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
+    private var identity: some View {
+        HStack(spacing: 12) {
+            Circle()
+                .fill(Theme.Color.card)
+                .frame(width: 44, height: 44)
+                .overlay {
+                    Image(systemName: "person.fill")
+                        .font(.system(size: 19))
                         .foregroundStyle(Theme.Color.secondaryText)
                 }
-                .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
 
-            ScrollView(.horizontal) {
-                HStack(spacing: 8) {
-                    ForEach(earned) { AchievementChip(item: $0, isEarned: true) }
-                    ForEach(Array(next)) { AchievementChip(item: $0, isEarned: false) }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Baydon")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(Theme.Color.primaryText)
+
+                HStack(spacing: 6) {
+                    Text(entitlements.isProUnlocked ? "PRO" : "FREE")
+                        .cardLabelStyle()
+                    if stats.dayStreak > 0 {
+                        Text("·").cardLabelStyle()
+                        HStack(spacing: 3) {
+                            Image(systemName: "flame.fill")
+                                .font(.system(size: 9, weight: .semibold))
+                            Text("\(stats.dayStreak) DAY STREAK")
+                                .font(Theme.Font.cardLabel())
+                                .tracking(Theme.Metric.labelTracking)
+                        }
+                        .foregroundStyle(Theme.Color.valid)
+                    }
                 }
             }
-            .scrollIndicators(.hidden)
+
+            Spacer(minLength: 0)
+
+            Menu {
+                Button("Feedback") { settingsSection = .feedback }
+                Button("Storage") { settingsSection = .storage }
+                if !entitlements.isProUnlocked {
+                    Button("Upgrade to Pro") { showPaywall = true }
+                }
+                #if DEBUG
+                Divider()
+                Button("Developer") { showDeveloper = true }
+                #endif
+            } label: {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.Color.secondaryText)
+                    .frame(width: 34, height: 34)
+                    .background(Theme.Color.card, in: .circle)
+            }
+        }
+    }
+
+    /// Three numbers, one of which is a door. Folding achievements in here
+    /// removed a whole scrolling shelf from the top of the screen.
+    private var summaryRow: some View {
+        HStack(spacing: 8) {
+            StatCard(value: "\(stats.totalSessions)", label: "SESSIONS")
+
+            if stats.repsThisWeek == 0 && stats.holdTimeThisWeek > 0 {
+                StatCard(
+                    value: SessionResult.durationLabel(stats.holdTimeThisWeek),
+                    label: "HELD THIS WK"
+                )
+            } else {
+                StatCard(value: "\(stats.repsThisWeek)", label: "REPS THIS WK")
+            }
+
+            Button { showAllAchievements = true } label: {
+                StatCard(
+                    value: "\(Achievements.earned(in: context).count)",
+                    label: "ACHIEVEMENTS ›"
+                )
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -193,35 +189,13 @@ struct YouView: View {
             Text("No sessions yet")
                 .font(Theme.Font.title())
                 .foregroundStyle(Theme.Color.primaryText)
-            Text("Tap the record button and do a set — it'll show up here.")
+            Text("Open Train and do a set — it'll show up here.")
                 .font(Theme.Font.body())
                 .foregroundStyle(Theme.Color.secondaryText)
                 .multilineTextAlignment(.center)
         }
         .padding(.horizontal, 40)
         .padding(.top, 60)
-    }
-}
-
-/// One badge, small enough to sit in a scrolling row.
-struct AchievementChip: View {
-    let item: Achievement
-    let isEarned: Bool
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: isEarned ? item.symbol : "lock.fill")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(isEarned ? Theme.Color.valid : Theme.Color.tertiaryText)
-            Text(item.title)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(isEarned ? Theme.Color.primaryText : Theme.Color.secondaryText)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 12)
-        .frame(height: 34)
-        .background(Theme.Color.card, in: .capsule)
-        .opacity(isEarned ? 1 : 0.6)
     }
 }
 
