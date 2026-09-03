@@ -5,15 +5,77 @@
 //  Frame 06 — Profile.
 //
 
+import SwiftData
 import SwiftUI
 
 struct ProfileView: View {
     @Environment(Entitlements.self) private var entitlements
+    @Query private var sessions: [WorkoutSession]
     @State private var showPaywall = false
     @State private var settingsSection: SettingsView.Section?
     #if DEBUG
     @State private var showDeveloper = false
     #endif
+
+    private var context: AchievementContext {
+        AchievementContext(sessions: sessions, stats: SessionStore.stats(for: sessions))
+    }
+
+    /// Earned first, then what's next — a list of locked badges above the
+    /// earned ones reads as a wall rather than a path.
+    private var achievements: some View {
+        let earned = Achievements.earned(in: context)
+        let next = Achievements.locked(in: context).prefix(3)
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("ACHIEVEMENTS")
+                    .sectionHeaderStyle()
+                Spacer()
+                Text("\(earned.count) EARNED")
+                    .cardLabelStyle()
+            }
+
+            if earned.isEmpty && next.isEmpty {
+                Text("Record a set and these start filling in.")
+                    .font(Theme.Font.body())
+                    .foregroundStyle(Theme.Color.secondaryText)
+            } else {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 10) {
+                        ForEach(earned) { badge($0, isEarned: true) }
+                        ForEach(Array(next)) { badge($0, isEarned: false) }
+                    }
+                }
+                .scrollIndicators(.hidden)
+            }
+        }
+    }
+
+    /// Every one of these was measured, never self-reported — that is what
+    /// makes them worth showing at all.
+    private func badge(_ item: Achievement, isEarned: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: isEarned ? item.symbol : "lock.fill")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(isEarned ? Theme.Color.valid : Theme.Color.tertiaryText)
+
+            Text(item.title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isEarned ? Theme.Color.primaryText : Theme.Color.secondaryText)
+                .lineLimit(1)
+
+            Text(item.detail)
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.Color.tertiaryText)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(width: 132, alignment: .leading)
+        .padding(14)
+        .background(Theme.Color.card, in: .rect(cornerRadius: Theme.Metric.cardRadius))
+        .opacity(isEarned ? 1 : 0.55)
+    }
 
     var body: some View {
         ScrollView {
@@ -23,6 +85,9 @@ struct ProfileView: View {
 
                 identityRow
                     .padding(.bottom, 28)
+
+                achievements
+                    .padding(.bottom, 32)
 
                 if !entitlements.isProUnlocked {
                     upgradeCard

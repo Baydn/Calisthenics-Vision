@@ -10,8 +10,15 @@
 //  therefore sets expectations and asks for the camera — it never asks the
 //  user to get a setup right before they can start.
 //
+//  It ends on a real set rather than on a permissions screen. Completing an
+//  achievement on day one is the single biggest retention lever available,
+//  and ours is worth more than a rival's because the camera watched it: the
+//  first record in History is something the app measured, not something the
+//  user typed.
+//
 
 import AVFoundation
+import SwiftData
 import SwiftUI
 
 struct OnboardingView: View {
@@ -21,6 +28,13 @@ struct OnboardingView: View {
 
     @State private var page = 0
     @State private var cameraDenied = false
+    @State private var stage: Stage = .pages
+    @State private var unlocked: [Achievement] = []
+
+    /// Onboarding runs pages → a real set → what that set unlocked.
+    private enum Stage: Equatable {
+        case pages, repTest, celebrate
+    }
 
     private let pages: [Page] = [
         Page(
@@ -41,6 +55,22 @@ struct OnboardingView: View {
     ]
 
     var body: some View {
+        switch stage {
+        case .pages:
+            pageFlow
+        case .repTest:
+            RepTestView { earned in
+                unlocked = earned
+                withAnimation(.snappy(duration: 0.3)) { stage = .celebrate }
+            }
+        case .celebrate:
+            AchievementUnlockedView(achievements: unlocked) {
+                hasCompletedOnboarding = true
+            }
+        }
+    }
+
+    private var pageFlow: some View {
         ZStack {
             Theme.Color.background.ignoresSafeArea()
 
@@ -58,7 +88,7 @@ struct OnboardingView: View {
                 PrimaryButton(title: buttonTitle) { advance() }
                     .padding(.horizontal, Theme.Metric.screenPadding)
 
-                Button("Skip") { hasCompletedOnboarding = true }
+                Button("Skip") { stage = .repTest }
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(Theme.Color.secondaryText)
                     .padding(.top, 16)
@@ -74,6 +104,8 @@ struct OnboardingView: View {
                     UIApplication.shared.open(url)
                 }
             }
+            // Without the camera there is no set to record, so skip it
+            // rather than showing a screen that can't do anything.
             Button("Continue Anyway", role: .cancel) { hasCompletedOnboarding = true }
         } message: {
             Text("Rep counting needs the camera. You can enable it in Settings at any time.")
@@ -82,6 +114,12 @@ struct OnboardingView: View {
 
     private var isLastPage: Bool { page == pages.count - 1 }
     private var buttonTitle: String { isLastPage ? "Enable Camera" : "Continue" }
+
+    /// Granting the camera leads straight into the set, which is the point of
+    /// having asked for it.
+    private func beginRepTest() {
+        withAnimation(.snappy(duration: 0.3)) { stage = .repTest }
+    }
 
     private func advance() {
         guard isLastPage else {
@@ -93,12 +131,12 @@ struct OnboardingView: View {
         // them with a system prompt on first launch.
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
-            hasCompletedOnboarding = true
+            beginRepTest()
         case .notDetermined:
             Task {
                 let granted = await AVCaptureDevice.requestAccess(for: .video)
                 if granted {
-                    hasCompletedOnboarding = true
+                    beginRepTest()
                 } else {
                     cameraDenied = true
                 }
@@ -156,4 +194,6 @@ struct OnboardingView: View {
 
 #Preview {
     OnboardingView()
+        .environment(CaptureStack())
+        .modelContainer(SampleSessions.previewContainer)
 }

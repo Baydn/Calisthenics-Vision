@@ -16,6 +16,8 @@ struct SessionStats {
 
     var bestPushUpSet = 0
     var longestHold: TimeInterval = 0
+    /// Every rep ever counted, for lifetime achievements.
+    var totalReps = 0
 
     /// Hold time logged in the last 7 days. A handstand-only week used to
     /// read as a week of zeroes, because every headline number counted reps.
@@ -45,6 +47,8 @@ enum SessionStore {
                 .filter { $0.startedAt >= weekAgo }
                 .reduce(0) { $0 + $1.repCount }
         }
+
+        stats.totalReps = sessions.reduce(0) { $0 + $1.repCount }
 
         stats.bestPushUpSet = sessions
             .filter { $0.movement == .pushUps }

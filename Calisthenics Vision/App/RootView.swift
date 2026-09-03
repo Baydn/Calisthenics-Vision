@@ -42,11 +42,16 @@ struct RootView: View {
     @State private var capture = CaptureStack()
 
     var body: some View {
-        if hasCompletedOnboarding {
-            mainInterface
-        } else {
-            OnboardingView()
+        Group {
+            if hasCompletedOnboarding {
+                mainInterface
+            } else {
+                // Onboarding finishes with a real set, so it needs the same
+                // capture stack the Train tab uses.
+                OnboardingView()
+            }
         }
+        .environment(capture)
     }
 
     private var mainInterface: some View {
@@ -65,7 +70,6 @@ struct RootView: View {
             AppTabBar(selection: $selectedTab)
                 .padding(.bottom, 6)
         }
-        .environment(capture)
         .preferredColorScheme(.dark)
     }
 }

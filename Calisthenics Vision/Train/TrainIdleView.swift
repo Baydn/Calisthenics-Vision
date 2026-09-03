@@ -25,6 +25,10 @@ struct TrainIdleView: View {
     @Environment(Entitlements.self) private var entitlements
     @Environment(CaptureStack.self) private var capture
     @Environment(\.modelContext) private var modelContext
+    /// Existing sessions, so a set can be measured against your record while
+    /// you're still in it. Strong's whole loop is "beat your last number",
+    /// and ours was invisible until the set was over.
+    @Query private var allSessions: [WorkoutSession]
 
     @State private var settings = AppSettings.shared
     /// The tracker for the selected movement, or nil where none exists yet.
@@ -43,6 +47,10 @@ struct TrainIdleView: View {
     @State private var selected: Movement = .pushUps
     @State private var showLibrary = false
     @State private var showPaywall = false
+    /// Record for the selected movement when the set began. Captured at the
+    /// start so beating it doesn't move the target mid-set.
+    @State private var recordToBeat: Double = 0
+    @State private var hasBeatenRecord = false
 
     /// Quick-pick movements; the rest live behind "+ Library".
     private let quickPicks: [Movement] = [.pushUps, .handstand, .lSit]
@@ -244,6 +252,8 @@ struct TrainIdleView: View {
     }
 
     private func beginRecording() {
+        recordToBeat = currentRecord
+        hasBeatenRecord = false
         tracker?.reset()
         progress = tracker?.progress ?? MovementProgress()
         lastEvent = nil
@@ -483,6 +493,16 @@ struct TrainIdleView: View {
                     .shadow(color: .black.opacity(0.5), radius: 8)
             }
 
+            if let record = recordLine {
+                Text(record.text)
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    .tracking(Theme.Metric.labelTracking)
+                    .foregroundStyle(record.beaten
+                                     ? Theme.Color.valid : Theme.Color.secondaryText)
+                    .shadow(color: .black.opacity(0.5), radius: 6)
+                    .contentTransition(.opacity)
+            }
+
             if let lastEvent {
                 Text(lastEvent.rawValue)
                     .font(.system(size: 17, weight: .semibold))
@@ -494,6 +514,15 @@ struct TrainIdleView: View {
             }
         }
         .animation(.snappy(duration: 0.2), value: lastEvent)
+        .animation(.snappy(duration: 0.3), value: recordLine?.beaten)
+        .onChange(of: recordLine?.beaten) { _, beaten in
+            // One celebration per set, at the instant it's beaten — you're
+            // usually mid-rep and not looking at the screen, so it has to be
+            // felt rather than read.
+            guard beaten == true, !hasBeatenRecord else { return }
+            hasBeatenRecord = true
+            Haptics.sessionComplete()
+        }
     }
 
     /// The clock for the attempt under way, plus how the set is going.
@@ -712,6 +741,33 @@ struct TrainIdleView: View {
 
     private func angleText(_ angle: Double?) -> String {
         angle.map { String(format: "%3.0f°", $0) } ?? "  —"
+    }
+
+    /// The number to beat for the selected movement: best single hold, or
+    /// best set. Never the session total — six 5s handstands are not a 30s
+    /// handstand (POSE.md §8).
+    private var currentRecord: Double {
+        let relevant = allSessions.filter { $0.movement == selected }
+        return selected.isTimedHold
+            ? (relevant.map(\.bestHold).max() ?? 0)
+            : Double(relevant.map(\.repCount).max() ?? 0)
+    }
+
+    /// How the set is going against that record, or nil when there's nothing
+    /// to beat yet — a first-ever set shouldn't be told it's behind.
+    private var recordLine: (text: String, beaten: Bool)? {
+        guard phase == .recording, recordToBeat > 0 else { return nil }
+        let current = selected.isTimedHold
+            ? progress.bestHold
+            : Double(progress.reps)
+
+        if current > recordToBeat {
+            return ("NEW BEST", true)
+        }
+        let label = selected.isTimedHold
+            ? SessionResult.durationLabel(recordToBeat)
+            : "\(Int(recordToBeat))"
+        return ("PB \(label)", false)
     }
 
     private func select(_ movement: Movement) {

@@ -30,7 +30,25 @@ struct HistoryView: View {
         NavigationStack {
         VStack(spacing: 0) {
             VStack(spacing: verticalSizeClass == .compact ? 12 : 18) {
-                ScreenHeader(title: "History")
+                HStack(alignment: .firstTextBaseline) {
+                    ScreenHeader(title: "History")
+                    Spacer(minLength: 8)
+                    // A streak only motivates while it's visible; buried in
+                    // the third stat card it may as well not exist.
+                    if stats.dayStreak > 0 {
+                        HStack(spacing: 5) {
+                            Image(systemName: "flame.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("\(stats.dayStreak)")
+                                .font(.system(size: 15, weight: .bold))
+                                .monospacedDigit()
+                        }
+                        .foregroundStyle(Theme.Color.valid)
+                        .padding(.horizontal, 10)
+                        .frame(height: 28)
+                        .background(Theme.Color.card, in: .capsule)
+                    }
+                }
 
                 if verticalSizeClass != .compact {
                     HStack(spacing: 8) {
