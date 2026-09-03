@@ -1,8 +1,8 @@
 //
-//  SocialView.swift
+//  HomeView.swift
 //  Calisthenics Vision
 //
-//  Feed and leaderboards — design preview.
+//  The Home tab: what everyone else is doing — design preview.
 //
 //  Nothing here is connected to anything. There is no account system, no
 //  backend and no other users; every name and number below is invented, and
@@ -17,7 +17,7 @@
 
 import SwiftUI
 
-struct SocialView: View {
+struct HomeView: View {
 
     enum Tab: String, CaseIterable, Hashable {
         case feed = "Following"
@@ -31,10 +31,19 @@ struct SocialView: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 16) {
-                ScreenHeader(title: "Feed")
+                HStack(alignment: .center) {
+                    ScreenHeader(title: "Home")
+                    Spacer(minLength: 8)
+                    // Finding people and talking to them are the two things a
+                    // feed is useless without. Both are entry points only.
+                    HStack(spacing: 8) {
+                        headerButton("magnifyingglass")
+                        headerButton("bubble.left.fill")
+                    }
+                }
 
                 PreviewNotice(
-                    "No accounts exist yet, so everyone here is invented. This is for deciding what a feed entry should say, not for reading."
+                    "No accounts exist yet, so everyone here is invented, and search and messages don't open. This is for deciding what a feed entry should carry."
                 )
 
                 SegmentedControl(segments: Tab.allCases, title: \.rawValue, selection: $tab)
@@ -57,6 +66,14 @@ struct SocialView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.Color.background)
+    }
+
+    private func headerButton(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(Theme.Color.secondaryText)
+            .frame(width: 36, height: 36)
+            .background(Theme.Color.card, in: .circle)
     }
 
     // MARK: - Feed
@@ -222,5 +239,5 @@ struct SocialView: View {
 }
 
 #Preview {
-    SocialView().preferredColorScheme(.dark)
+    HomeView().preferredColorScheme(.dark)
 }
