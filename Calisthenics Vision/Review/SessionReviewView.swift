@@ -34,6 +34,13 @@ struct SessionReviewView: View {
     /// Width ÷ height of the recording, so the overlay lands on the body.
     @State private var videoAspect: CGFloat = 9.0 / 16.0
     @State private var showDeleteConfirmation = false
+    /// A frame from the recording, blurred behind the video to fill the
+    /// letterbox. A portrait clip in a landscape-ish stage leaves bars either
+    /// way; grey ones read as a broken layout, a soft backdrop reads as intent.
+    @State private var poster: UIImage?
+    /// Controls fade out during playback and come back on a tap.
+    @State private var showsControls = true
+    @State private var controlHideTask: Task<Void, Never>?
 
     /// Pose logged at the current playback position, if telemetry exists.
     private var poseAtCurrentTime: Pose? {
@@ -117,6 +124,15 @@ struct SessionReviewView: View {
         .preferredColorScheme(.dark)
         .task { await load() }
         .onDisappear { teardown() }
+        // Reaching the end used to leave `isPlaying` stuck true, which hid
+        // the only play button on screen and made the video unplayable.
+        .onReceive(
+            NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)
+        ) { _ in
+            isPlaying = false
+            if duration > 0 { currentTime = duration }
+            revealControls(persist: true)
+        }
         .confirmationDialog(
             "Delete this session?",
             isPresented: $showDeleteConfirmation,
@@ -190,7 +206,18 @@ struct SessionReviewView: View {
 
     private var videoStage: some View {
         ZStack {
-            Rectangle().fill(Theme.Color.card)
+            // Black rather than card grey, so the letterbox reads as part of
+            // the screen instead of an unfilled container.
+            Rectangle().fill(Theme.Color.background)
+
+            if let poster {
+                Image(uiImage: poster)
+                    .resizable()
+                    .scaledToFill()
+                    .blur(radius: 28)
+                    .overlay(Theme.Color.background.opacity(0.45))
+                    .allowsHitTesting(false)
+            }
 
             if let player {
                 VideoPlayerLayer(player: player)
@@ -227,12 +254,24 @@ struct SessionReviewView: View {
                         .background(.black.opacity(0.45), in: .circle)
                 }
                 .buttonStyle(.plain)
-                .opacity(isPlaying ? 0 : 1)
-                .animation(.easeInOut(duration: 0.2), value: isPlaying)
+                .opacity(showsControls ? 1 : 0)
+                .animation(.easeInOut(duration: 0.2), value: showsControls)
             }
         }
         .frame(height: isCompactHeight ? 200 : 340)
         .clipped()
+        .contentShape(.rect)
+        // Tapping the video is how people expect to pause. Without it the
+        // only control was a button that hid itself while playing.
+        .onTapGesture {
+            if isPlaying && showsControls {
+                togglePlayback()
+            } else if isPlaying {
+                revealControls()
+            } else {
+                togglePlayback()
+            }
+        }
     }
 
     // MARK: - Scrubber
@@ -271,16 +310,27 @@ struct SessionReviewView: View {
                         .onChanged { value in
                             isScrubbing = true
                             let ratio = max(0, min(1, value.location.x / width))
-                            currentTime = ratio * duration
-                            seek(to: currentTime)
+                            seek(to: ratio * duration)
                         }
                         .onEnded { _ in isScrubbing = false }
                 )
             }
             .frame(height: 20)
 
-            HStack {
-                Text(SessionResult.durationLabel(currentTime))
+            HStack(spacing: 12) {
+                // Always here, whatever the video is doing — the on-video
+                // button fades, this one doesn't.
+                Button(action: togglePlayback) {
+                    Image(systemName: playButtonSymbol)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.Color.primaryText)
+                        .frame(width: 30, height: 30)
+                        .background(Theme.Color.card, in: .circle)
+                }
+                .buttonStyle(.plain)
+                .disabled(player == nil)
+
+                Text(SessionResult.preciseDurationLabel(currentTime))
                 Spacer()
                 Text(SessionResult.durationLabel(duration))
             }
@@ -346,8 +396,7 @@ struct SessionReviewView: View {
                         ForEach(Array(holds.enumerated()), id: \.offset) { index, hold in
                             Button {
                                 guard let f = fraction(of: hold.startTimestampMs) else { return }
-                                currentTime = f * duration
-                                seek(to: currentTime)
+                                seek(to: f * duration, thenPlay: true)
                             } label: {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text("HOLD \(index + 1)")
@@ -433,10 +482,16 @@ struct SessionReviewView: View {
         ) { time in
             guard !isScrubbing else { return }
             currentTime = time.seconds
+            // Trust the player over our own flag: pausing can also come from
+            // an interruption, a route change, or the end of the item.
+            isPlaying = player.timeControlStatus == .playing
         }
+
+        await loadPoster(from: asset, duration: duration)
     }
 
     private func teardown() {
+        controlHideTask?.cancel()
         if let timeObserver, let player {
             player.removeTimeObserver(timeObserver)
         }
@@ -445,24 +500,73 @@ struct SessionReviewView: View {
         player = nil
     }
 
+    private var playButtonSymbol: String {
+        if isPlaying { return "pause.fill" }
+        return isAtEnd ? "arrow.counterclockwise" : "play.fill"
+    }
+
+    private var isAtEnd: Bool {
+        duration > 0 && currentTime >= duration - 0.08
+    }
+
     private func togglePlayback() {
         guard let player else { return }
         if isPlaying {
             player.pause()
+            isPlaying = false
+            revealControls(persist: true)
         } else {
-            // Restart from the top rather than sticking at the end.
-            if duration > 0, currentTime >= duration - 0.05 { seek(to: 0) }
+            // Playing from the end restarts, rather than sitting there doing
+            // nothing — which is what it did before, because `isPlaying` was
+            // never cleared when the video finished.
+            if isAtEnd { seek(to: 0) }
             player.play()
+            isPlaying = true
+            revealControls()
         }
-        isPlaying.toggle()
     }
 
-    private func seek(to seconds: TimeInterval) {
+    /// Shows the on-video control, hiding it again after a moment unless
+    /// playback is stopped.
+    private func revealControls(persist: Bool = false) {
+        controlHideTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.2)) { showsControls = true }
+        guard !persist else { return }
+        controlHideTask = Task {
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled, isPlaying else { return }
+            withAnimation(.easeInOut(duration: 0.3)) { showsControls = false }
+        }
+    }
+
+    /// Jumps to a point and keeps playing from there. Seeking to a hold and
+    /// then having to find the play button is a step nobody wants.
+    private func seek(to seconds: TimeInterval, thenPlay: Bool = false) {
+        let clamped = max(0, min(duration > 0 ? duration : seconds, seconds))
+        currentTime = clamped
         player?.seek(
-            to: CMTime(seconds: seconds, preferredTimescale: 600),
+            to: CMTime(seconds: clamped, preferredTimescale: 600),
             toleranceBefore: .zero,
             toleranceAfter: .zero
         )
+        if thenPlay, let player {
+            player.play()
+            isPlaying = true
+            revealControls()
+        }
+    }
+
+    /// A still from the recording, used as the blurred backdrop.
+    private func loadPoster(from asset: AVURLAsset, duration: TimeInterval) async {
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 320, height: 320)
+        // A third of the way in: the first frame is often the person still
+        // walking into shot.
+        let at = CMTime(seconds: max(0.1, duration / 3), preferredTimescale: 600)
+        if let image = try? await generator.image(at: at).image {
+            poster = UIImage(cgImage: image)
+        }
     }
 }
 
