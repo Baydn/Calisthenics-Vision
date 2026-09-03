@@ -347,6 +347,16 @@ swiftc main.swift "<src>/Pose/PoseSkeleton.swift" "<src>/Movements/PushUpTracker
 Synthetic poses are built in **world space** and rotated, so a single fixture
 generator produces every camera angle.
 
+### `Movements/` stays pure
+
+Nothing in `Movements/` may import app state — no `UserDefaults`, no
+`AppSettings`, no SwiftUI. That directory compiles into the standalone
+harness, and the harness is the *only* way this app's measurement is
+verified; a settings dependency would break it silently.
+
+User preferences are applied one level up, in `TrackerFactory`. A tracker's
+own defaults are the ones the tests exercise.
+
 ### Mandatory matrix for any new tracker
 
 | Case | Asserts |

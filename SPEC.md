@@ -38,6 +38,11 @@ breaks, and log synchronized video telemetry for calisthenics training.
   trailing edge in landscape rather than stretching the portrait layout.
   Rotation is held for the duration of a recording, since an asset writer's
   dimensions are fixed once the first frame lands.
+- **Spoken coaching.** `AVSpeechSynthesizer` announces the countdown, rep
+  counts, hold time, form cues and a beaten record, ducking other audio
+  rather than interrupting it. Off by default and toggled from the Train
+  screen — the screen is unreadable from across the room and impossible to
+  read upside down, so speech is what carries the number.
 - **Live timers show hundredths.** Whole seconds make a running clock look
   frozen between ticks, which reads as the app having stopped counting.
 
