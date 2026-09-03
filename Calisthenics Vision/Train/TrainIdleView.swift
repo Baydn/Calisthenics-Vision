@@ -47,6 +47,7 @@ struct TrainIdleView: View {
     @State private var selected: Movement = .pushUps
     @State private var showLibrary = false
     @State private var showPaywall = false
+    @State private var showMovementSettings = false
     /// Record for the selected movement when the set began. Captured at the
     /// start so beating it doesn't move the target mid-set.
     @State private var recordToBeat: Double = 0
@@ -98,6 +99,7 @@ struct TrainIdleView: View {
             UIApplication.shared.isIdleTimerDisabled = false
             countdownTask?.cancel()
             poseSession.onPose = nil
+            AudioCoach.shared.end()
             capture.suspend()
         }
         .onReceive(ticker) { _ in
@@ -107,6 +109,9 @@ struct TrainIdleView: View {
         }
         .sheet(isPresented: $showLibrary) {
             MovementLibraryView(selected: $selected)
+        }
+        .sheet(isPresented: $showMovementSettings) {
+            MovementSettingsView(movement: selected)
         }
         .sheet(isPresented: $showPaywall) { PaywallView() }
     }
@@ -127,7 +132,11 @@ struct TrainIdleView: View {
                 // puts it — it belongs to the shot you're about to take, not
                 // to the chrome at the top of the screen.
                 VStack(spacing: 14) {
-                    lensButton
+                    HStack(spacing: 12) {
+                        audioButton
+                        lensButton
+                        tuneButton
+                    }
                     recordButton
                 }
                 .padding(.bottom, Theme.Metric.tabBarClearance + 8)
@@ -165,7 +174,9 @@ struct TrainIdleView: View {
             HStack {
                 Spacer()
                 VStack(spacing: 12) {
+                    audioButton
                     lensButton
+                    tuneButton
                     recordButton
                         .scaleEffect(0.78)
                 }
@@ -197,21 +208,26 @@ struct TrainIdleView: View {
         }
 
         switch event {
-        case .repCompleted:
+        case .repCompleted(let total):
             if phase == .recording { repTimestamps.append(timestampMs) }
             Haptics.repCounted()
-        case .holdTick:
+            AudioCoach.shared.repCounted(total)
+        case .holdTick(let seconds):
             // A quiet pulse each second, so a hold can be timed without
             // looking at the screen — which is the whole point upside down.
+            // Speech carries the actual number, which a pulse can't.
             Haptics.holdTick()
-        case .holdCompleted:
+            AudioCoach.shared.holdTick(seconds: seconds)
+        case .holdCompleted(let index, let duration):
             // A firmer tap: that attempt is banked and the next one starts
             // from zero.
             Haptics.holdCompleted()
+            AudioCoach.shared.holdCompleted(index: index, duration: duration)
         case .formBreak(let issue):
             if phase == .recording { formBreakTimestamps.append(timestampMs) }
             lastEvent = issue
             Haptics.formBreak()
+            AudioCoach.shared.formIssue(issue)
         case .formRecovered:
             lastEvent = nil
         case nil:
@@ -244,6 +260,7 @@ struct TrainIdleView: View {
             for value in stride(from: seconds, through: 1, by: -1) {
                 phase = .countdown(value)
                 Haptics.countdownTick()
+                AudioCoach.shared.countdown(value)
                 try? await Task.sleep(for: .seconds(1))
                 if Task.isCancelled { phase = .idle; return }
             }
@@ -265,6 +282,8 @@ struct TrainIdleView: View {
         if settings.recordsVideo { camera.startRecording() }
         phase = .recording
         Haptics.sessionStart()
+        AudioCoach.shared.begin()
+        AudioCoach.shared.setStarted()
     }
 
     private func finishRecording() {
@@ -323,6 +342,12 @@ struct TrainIdleView: View {
             try? modelContext.save()
 
             Haptics.sessionComplete()
+            AudioCoach.shared.setFinished(
+                summary: movement.isTimedHold
+                    ? "Set complete. Best hold \(Int(holds.map(\.duration).max() ?? 0)) seconds."
+                    : "Set complete. \(reps) reps."
+            )
+            AudioCoach.shared.end()
             startedAt = nil
             phase = .idle
         }
@@ -522,6 +547,7 @@ struct TrainIdleView: View {
             guard beaten == true, !hasBeatenRecord else { return }
             hasBeatenRecord = true
             Haptics.sessionComplete()
+            AudioCoach.shared.recordBeaten()
         }
     }
 
@@ -703,6 +729,48 @@ struct TrainIdleView: View {
         }
     }
 
+    /// Coaching is toggled here rather than buried in Settings: it's decided
+    /// on the way into a set, and it's the kind of thing you want off the
+    /// moment someone walks into the room.
+    private var audioButton: some View {
+        Button {
+            settings.audioCoaching.toggle()
+            if settings.audioCoaching {
+                AudioCoach.shared.begin()
+                AudioCoach.shared.setFinished(summary: "Coaching on")
+            } else {
+                AudioCoach.shared.end()
+            }
+        } label: {
+            Image(systemName: settings.audioCoaching
+                  ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(settings.audioCoaching
+                                 ? Theme.Color.background : Theme.Color.primaryText)
+                .frame(width: 36, height: 36)
+                .background(
+                    settings.audioCoaching
+                        ? AnyShapeStyle(Theme.Color.primaryText)
+                        : AnyShapeStyle(Theme.Color.card.opacity(0.8)),
+                    in: .circle
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Per-movement tuning. Currently coaching detail and push-up depth;
+    /// this is where movement-specific settings accumulate.
+    private var tuneButton: some View {
+        Button { showMovementSettings = true } label: {
+            Image(systemName: "slider.horizontal.3")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Theme.Color.primaryText)
+                .frame(width: 36, height: 36)
+                .background(Theme.Color.card.opacity(0.8), in: .circle)
+        }
+        .buttonStyle(.plain)
+    }
+
     @ViewBuilder
     private var performanceReadout: some View {
         #if DEBUG
@@ -779,7 +847,7 @@ struct TrainIdleView: View {
         // Swap in the matching state machine. Nil means the movement has no
         // tracker yet, which the HUD says out loud rather than counting
         // nothing and looking broken.
-        tracker = movement.makeTracker()
+        tracker = TrackerFactory.make(for: movement)
         progress = tracker?.progress ?? MovementProgress()
         lastEvent = nil
     }

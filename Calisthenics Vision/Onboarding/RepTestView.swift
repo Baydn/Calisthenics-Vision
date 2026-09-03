@@ -86,6 +86,7 @@ struct RepTestView: View {
         .onDisappear {
             countdownTask?.cancel()
             poseSession.onPose = nil
+            AudioCoach.shared.end()
             capture.suspend()
         }
     }
@@ -99,10 +100,17 @@ struct RepTestView: View {
         progress = current.progress
 
         switch event {
-        case .repCompleted:   Haptics.repCounted()
-        case .holdTick:       Haptics.holdTick()
-        case .holdCompleted:  Haptics.holdCompleted()
-        default:              break
+        case .repCompleted(let total):
+            Haptics.repCounted()
+            AudioCoach.shared.repCounted(total)
+        case .holdTick(let seconds):
+            Haptics.holdTick()
+            AudioCoach.shared.holdTick(seconds: seconds)
+        case .holdCompleted(let index, let duration):
+            Haptics.holdCompleted()
+            AudioCoach.shared.holdCompleted(index: index, duration: duration)
+        default:
+            break
         }
     }
 
@@ -117,12 +125,15 @@ struct RepTestView: View {
             for value in stride(from: 3, through: 1, by: -1) {
                 phase = .countdown(value)
                 Haptics.countdownTick()
+                AudioCoach.shared.countdown(value)
                 try? await Task.sleep(for: .seconds(1))
                 if Task.isCancelled { phase = .ready; return }
             }
             startedAt = Date()
             phase = .running
             Haptics.sessionStart()
+            AudioCoach.shared.begin()
+            AudioCoach.shared.setStarted()
         }
     }
 
@@ -168,13 +179,14 @@ struct RepTestView: View {
 
         phase = .done
         Haptics.sessionComplete()
+        AudioCoach.shared.end()
         onFinish(Achievements.newlyEarned(from: before, to: after))
     }
 
     private func select(_ next: Movement) {
         guard phase == .ready else { return }
         withAnimation(.snappy(duration: 0.2)) { movement = next }
-        tracker = next.makeTracker()
+        tracker = TrackerFactory.make(for: next)
         progress = tracker?.progress ?? MovementProgress()
     }
 

@@ -123,6 +123,9 @@ extension Movement {
     /// Returning nil rather than silently substituting a push-up counter means
     /// the UI can say "not supported yet" instead of appearing to work while
     /// counting nothing.
+    /// The tracker with its own defaults, free of any user preference —
+    /// `Movements/` stays pure so it compiles into the standalone test
+    /// harness (POSE.md §12). Preferences are applied by `TrackerFactory`.
     func makeTracker() -> (any MovementTracker)? {
         switch self {
         case .pushUps:   PushUpTracker()
