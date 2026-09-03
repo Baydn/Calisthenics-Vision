@@ -49,6 +49,8 @@ struct TrainIdleView: View {
     @State private var showPaywall = false
     @State private var showMovementSettings = false
     @State private var timerExpanded = false
+    /// The set that just finished, shown as a summary sheet.
+    @State private var completed: WorkoutSession?
     @Namespace private var lensPill
     @Namespace private var timerPill
     /// Record for the selected movement when the set began. Captured at the
@@ -114,6 +116,9 @@ struct TrainIdleView: View {
         }
         .sheet(isPresented: $showMovementSettings) {
             MovementSettingsView(movement: selected)
+        }
+        .sheet(item: $completed) { session in
+            SetSummaryView(session: session)
         }
         .sheet(isPresented: $showPaywall) { PaywallView() }
     }
@@ -357,6 +362,9 @@ struct TrainIdleView: View {
             )
             modelContext.insert(session)
             try? modelContext.save()
+
+            // Every set gets a verdict, not just the record-breaking ones.
+            completed = session
 
             Haptics.sessionComplete()
             AudioCoach.shared.setFinished(

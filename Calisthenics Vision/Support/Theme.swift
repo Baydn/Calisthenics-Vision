@@ -34,6 +34,11 @@ enum Theme {
 
         // Accents. Reserved for the live pose overlay and activity indicators —
         // keep the rest of the app chrome monochrome.
+        /// Marks design previews — screens that exist to show the shape of a
+        /// planned feature but aren't wired up. Deliberately outside the
+        /// app's green/red vocabulary so it never reads as app state.
+        static let previewAccent = SwiftUI.Color(red: 1.0, green: 0.69, blue: 0.13)
+
         static let valid = SwiftUI.Color(red: 0, green: 1, blue: 0.4)                   // #00FF66
         static let warning = SwiftUI.Color(red: 1, green: 0.2, blue: 0.4)               // #FF3366
     }

@@ -8,6 +8,10 @@
 //  the same shape in a material, so the layout never changes shape underneath
 //  the screens that reserve room for it.
 //
+//  Four tabs at 74pt each is 312pt plus padding on a 402pt screen — it fits,
+//  but a fifth would not without shrinking the items past a comfortable tap
+//  target. Treat four as the ceiling.
+//
 //  The capture stack lives here, above the tab switch — see CaptureStack for
 //  why owning it inside the Train screen crashed.
 //
@@ -16,12 +20,13 @@ import SwiftData
 import SwiftUI
 
 enum AppTab: String, CaseIterable, Hashable {
-    case train, history, profile
+    case train, history, feed, profile
 
     var title: String {
         switch self {
         case .train:   "Train"
         case .history: "History"
+        case .feed:    "Feed"
         case .profile: "Profile"
         }
     }
@@ -30,6 +35,7 @@ enum AppTab: String, CaseIterable, Hashable {
         switch self {
         case .train:   "smallcircle.filled.circle"
         case .history: "clock"
+        case .feed:    "person.2.fill"
         case .profile: "person.fill"
         }
     }
@@ -62,6 +68,7 @@ struct RootView: View {
                 switch selectedTab {
                 case .train:   TrainIdleView()
                 case .history: HistoryView()
+                case .feed:    SocialView()
                 case .profile: ProfileView()
                 }
             }
@@ -90,7 +97,7 @@ struct AppTabBar: View {
                         .font(isActive ? Theme.Font.tabLabelActive() : Theme.Font.tabLabel())
                 }
                 .foregroundStyle(isActive ? Theme.Color.primaryText : Theme.Color.secondaryText)
-                .frame(width: 82, height: 50)
+                .frame(width: 74, height: 50)
                 .background {
                     if isActive {
                         Capsule()

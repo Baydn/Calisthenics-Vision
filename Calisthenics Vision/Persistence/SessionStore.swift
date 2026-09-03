@@ -30,7 +30,82 @@ struct SessionStats {
     var totalHolds = 0
 }
 
+/// Where a set sits among everything you've done for that movement.
+///
+/// Strava's habit loop isn't the leaderboard — it's that *every* effort gets
+/// contextualised, so nothing goes unremarked. All of this is computable from
+/// sessions already on the phone; none of it needs an account.
+struct PerformanceContext {
+    /// 1 = best ever for this movement.
+    var rank: Int = 1
+    /// How many sessions of this movement exist, including this one.
+    var total: Int = 1
+    /// Days since the last time you matched or beat this, when it isn't an
+    /// all-time best. Nil when nothing before it comes close.
+    var daysSinceBetter: Int?
+
+    var isPersonalBest: Bool { rank == 1 && total > 1 }
+    /// A first-ever set has no context, and saying "1st best" would be
+    /// nonsense — the record-to-beat display follows the same rule.
+    var hasContext: Bool { total > 1 }
+
+    var rankLabel: String? {
+        guard hasContext else { return nil }
+        if isPersonalBest { return "Personal best" }
+        switch rank {
+        case 2:  return "2nd best ever"
+        case 3:  return "3rd best ever"
+        default: return "\(rank)th best ever"
+        }
+    }
+
+    /// "Best in 6 weeks" — the phrasing people actually find motivating,
+    /// because it beats a number they remember rather than an all-time high
+    /// they may never touch.
+    var recencyLabel: String? {
+        guard hasContext, !isPersonalBest, let days = daysSinceBetter, days >= 7 else { return nil }
+        if days >= 365 { return "Best in over a year" }
+        if days >= 60  { return "Best in \(days / 30) months" }
+        if days >= 14  { return "Best in \(days / 7) weeks" }
+        return "Best this week"
+    }
+}
+
 enum SessionStore {
+
+    // MARK: - Context
+
+    /// Ranks one session against the others for the same movement.
+    ///
+    /// Holds are ranked on the best single attempt, never the set total —
+    /// six five-second handstands are not a thirty-second handstand.
+    static func context(
+        for session: WorkoutSession,
+        among sessions: [WorkoutSession]
+    ) -> PerformanceContext {
+        func metric(_ s: WorkoutSession) -> Double {
+            s.movement.isTimedHold ? s.bestHold : Double(s.repCount)
+        }
+
+        let peers = sessions.filter { $0.movement == session.movement && $0.id != session.id }
+        var context = PerformanceContext()
+        context.total = peers.count + 1
+        guard !peers.isEmpty else { return context }
+
+        let mine = metric(session)
+        context.rank = 1 + peers.filter { metric($0) > mine }.count
+
+        // Walk backwards to the most recent session that matched or beat this
+        // one; the gap to it is what "best in N weeks" means.
+        if let previousBetter = peers
+            .filter({ $0.startedAt < session.startedAt && metric($0) >= mine })
+            .max(by: { $0.startedAt < $1.startedAt }) {
+            context.daysSinceBetter = Calendar.current.dateComponents(
+                [.day], from: previousBetter.startedAt, to: session.startedAt
+            ).day
+        }
+        return context
+    }
 
     // MARK: - Stats
 
