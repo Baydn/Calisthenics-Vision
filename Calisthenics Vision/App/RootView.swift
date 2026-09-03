@@ -2,18 +2,20 @@
 //  RootView.swift
 //  Calisthenics Vision
 //
-//  Tab shell — Home, Record, You.
+//  Tab shell — Home, Train, You.
 //
 //  Shaped after Strava, which consolidated its old Profile and Training tabs
 //  into a single "You" for exactly the reason we need it: everything about
 //  *your* training belongs in one place, which leaves the bar room to grow.
-//  Recording sits in the centre and is drawn as a button rather than an icon,
-//  because it's the one thing you open the app to do.
+//  Training sits in the centre because it's the one thing you open the app to
+//  do — but it's a tab like the others, not a shutter. The shutter lives on
+//  the screen it belongs to; duplicating it here made the bar look like it
+//  would start recording, which it doesn't.
 //
 //  Strava runs five (Home, Maps, Record, Groups, You). Three is the right
 //  starting point here — a tab for a feature that doesn't exist yet is worse
 //  than a gap — and the bar is built so a fourth and fifth can slot either
-//  side of Record when there's something real to put in them.
+//  side of Train when there's something real to put in them.
 //
 //  The bar is custom rather than a system `TabView` so it stays legible over
 //  the full-bleed camera preview. On iOS 26 it's a floating Liquid Glass
@@ -21,38 +23,35 @@
 //  never changes shape underneath the screens that reserve room for it.
 //
 //  The capture stack lives here, above the tab switch — see CaptureStack for
-//  why owning it inside the Record screen crashed.
+//  why owning it inside the Train screen crashed.
 //
 
 import SwiftData
 import SwiftUI
 
 enum AppTab: String, CaseIterable, Hashable {
-    case home, record, you
+    case home, train, you
 
     var title: String {
         switch self {
-        case .home:   "Home"
-        case .record: "Record"
-        case .you:    "You"
+        case .home:  "Home"
+        case .train: "Train"
+        case .you:   "You"
         }
     }
 
     var symbolName: String {
         switch self {
-        case .home:   "house.fill"
-        case .record: "camera.fill"
-        case .you:    "person.fill"
+        case .home:  "house.fill"
+        case .train: "smallcircle.filled.circle"
+        case .you:   "person.fill"
         }
     }
-
-    /// The centre tab is drawn as a button, not an icon in a row.
-    var isPrimary: Bool { self == .record }
 }
 
 struct RootView: View {
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
-    @State private var selectedTab: AppTab = .record
+    @State private var selectedTab: AppTab = .train
     /// Built once for the life of the app, never per-screen.
     @State private var capture = CaptureStack()
 
@@ -62,7 +61,7 @@ struct RootView: View {
                 mainInterface
             } else {
                 // Onboarding finishes with a real set, so it needs the same
-                // capture stack the Record tab uses.
+                // capture stack the Train tab uses.
                 OnboardingView()
             }
         }
@@ -75,9 +74,9 @@ struct RootView: View {
 
             Group {
                 switch selectedTab {
-                case .home:   HomeView()
-                case .record: TrainIdleView()
-                case .you:    YouView()
+                case .home:  HomeView()
+                case .train: TrainIdleView()
+                case .you:   YouView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -96,11 +95,7 @@ struct AppTabBar: View {
     var body: some View {
         HStack(spacing: 2) {
             ForEach(AppTab.allCases, id: \.self) { tab in
-                if tab.isPrimary {
-                    recordButton(tab)
-                } else {
-                    item(tab)
-                }
+                item(tab)
             }
         }
         .padding(4)
@@ -125,28 +120,6 @@ struct AppTabBar: View {
             }
         }
         .contentShape(.rect)
-        .onTapGesture {
-            withAnimation(Theme.Motion.selection) { selection = tab }
-        }
-    }
-
-    /// Borrowed from the shutter on the Record screen, so the two read as the
-    /// same action at two scales.
-    private func recordButton(_ tab: AppTab) -> some View {
-        let isActive = tab == selection
-        return ZStack {
-            Circle()
-                .strokeBorder(Theme.Color.primaryText, lineWidth: isActive ? 3 : 2)
-                .frame(width: 46, height: 46)
-                .opacity(isActive ? 1 : 0.75)
-            Circle()
-                .fill(Theme.Color.primaryText)
-                .frame(width: isActive ? 34 : 30, height: isActive ? 34 : 30)
-                .opacity(isActive ? 1 : 0.75)
-        }
-        .frame(width: 64, height: 50)
-        .contentShape(.rect)
-        .accessibilityLabel(tab.title)
         .onTapGesture {
             withAnimation(Theme.Motion.selection) { selection = tab }
         }
