@@ -17,20 +17,40 @@ import SwiftData
 import SwiftUI
 
 struct PostCard: View {
-    let post: Post
-    let sessions: [WorkoutSession]
+    /// Nil for an example card — the feed shows a few so the shape is visible
+    /// before there's anyone to follow.
+    var post: Post?
+    var sessions: [WorkoutSession] = []
     /// Nil for your own posts; a handle for anyone else's.
     var author: String?
 
+    /// Everything an example card needs, so both kinds render through one
+    /// view and the actions row can't exist on one and not the other.
+    struct Example {
+        var title: String
+        var when: String
+        var caption: String = ""
+        var headline: String
+        var subhead: String?
+        var hasClip: Bool = false
+        var likeCount: Int
+        var commentCount: Int
+    }
+    var example: Example?
+    var onComment: (() -> Void)?
+    var onShare: (() -> Void)?
+
     @Environment(\.modelContext) private var modelContext
     @State private var showBreakdown = false
+    @State private var exampleLiked = false
 
-    private var sets: [WorkoutSession] { post.sessions(from: sessions) }
+    private var sets: [WorkoutSession] { post?.sessions(from: sessions) ?? [] }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
-            if !post.caption.isEmpty { caption }
+            if !captionText.isEmpty { caption }
+            if example?.hasClip == true { clip }
             headline
             if sets.count > 1 { breakdown }
             actions
@@ -53,7 +73,7 @@ struct PostCard: View {
                 Text(author ?? "You")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.Color.primaryText)
-                Text("\(post.title(from: sessions)) · \(relativeTime)")
+                Text("\(titleText) · \(relativeTime)")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.Color.secondaryText)
             }
@@ -69,12 +89,37 @@ struct PostCard: View {
         }
     }
 
+    private var titleText: String {
+        example?.title ?? post?.title(from: sessions) ?? "Post"
+    }
+
+    private var captionText: String {
+        example?.caption ?? post?.caption ?? ""
+    }
+
     private var relativeTime: String {
-        post.createdAt.formatted(.relative(presentation: .numeric))
+        if let example { return example.when }
+        return post?.createdAt.formatted(.relative(presentation: .numeric)) ?? ""
+    }
+
+    private var clip: some View {
+        RoundedRectangle(cornerRadius: 8)
+            .fill(
+                LinearGradient(
+                    colors: [Theme.Color.elevated, Theme.Color.background],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                )
+            )
+            .frame(height: 130)
+            .overlay {
+                Image(systemName: "play.circle.fill")
+                    .font(.system(size: 30))
+                    .foregroundStyle(Theme.Color.primaryText.opacity(0.65))
+            }
     }
 
     private var caption: some View {
-        Text(post.caption)
+        Text(captionText)
             .font(.system(size: 14.5))
             .foregroundStyle(Theme.Color.primaryText)
             .fixedSize(horizontal: false, vertical: true)
@@ -82,7 +127,7 @@ struct PostCard: View {
 
     private var headline: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(post.headline(from: sessions))
+            Text(example?.headline ?? post?.headline(from: sessions) ?? "—")
                 .font(.system(size: 26, weight: .bold, design: .monospaced))
                 .foregroundStyle(Theme.Color.primaryText)
             if let detail = subhead {
@@ -95,7 +140,8 @@ struct PostCard: View {
     }
 
     private var subhead: String? {
-        guard let first = sets.first else { return nil }
+        if let example { return example.subhead }
+        guard let post, let first = sets.first else { return nil }
         if post.isSingleSet {
             if first.movement.isTimedHold, first.holdDurationsSec.count > 1 {
                 return "\(first.holdDurationsSec.count) holds · \(first.formQualityLabel ?? "—") line"
@@ -143,19 +189,30 @@ struct PostCard: View {
         }
     }
 
+    private var isLiked: Bool { post?.isLikedByMe ?? exampleLiked }
+
+    private var likeTotal: Int {
+        let base = post?.likeCount ?? example?.likeCount ?? 0
+        return post == nil && exampleLiked ? base + 1 : base
+    }
+
+    private var commentTotal: Int { post?.commentCount ?? example?.commentCount ?? 0 }
+
     private var actions: some View {
         HStack(spacing: 0) {
             action(
-                post.isLikedByMe ? "heart.fill" : "heart",
-                label: post.likeCount > 0 ? "\(post.likeCount)" : "Like",
-                tint: post.isLikedByMe ? Theme.Color.warning : Theme.Color.secondaryText
+                isLiked ? "heart.fill" : "heart",
+                label: likeTotal > 0 ? "\(likeTotal)" : "Like",
+                tint: isLiked ? Theme.Color.warning : Theme.Color.secondaryText
             ) {
                 withAnimation(Theme.Motion.content) { toggleLike() }
             }
 
-            action("bubble.right", label: post.commentCount > 0 ? "\(post.commentCount)" : "Comment") {}
+            action("bubble.right", label: commentTotal > 0 ? "\(commentTotal)" : "Comment") {
+                onComment?()
+            }
 
-            action("square.and.arrow.up", label: "Share") {}
+            action("square.and.arrow.up", label: "Share") { onShare?() }
         }
         .padding(.top, 2)
         .overlay(alignment: .top) {
@@ -187,9 +244,13 @@ struct PostCard: View {
     }
 
     private func toggleLike() {
-        post.isLikedByMe.toggle()
-        post.likeCount += post.isLikedByMe ? 1 : -1
-        try? modelContext.save()
+        if let post {
+            post.isLikedByMe.toggle()
+            post.likeCount += post.isLikedByMe ? 1 : -1
+            try? modelContext.save()
+        } else {
+            exampleLiked.toggle()
+        }
         Haptics.repCounted()
     }
 }

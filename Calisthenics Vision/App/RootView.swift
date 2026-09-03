@@ -81,8 +81,13 @@ struct RootView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
+            // Sits low, the way Instagram and Strava do — clear of the home
+            // indicator but not floating a centimetre above it. Resting on
+            // the safe-area inset put it noticeably higher than every other
+            // app on the phone.
             AppTabBar(selection: $selectedTab)
-                .padding(.bottom, 6)
+                .padding(.bottom, 14)
+                .ignoresSafeArea(.container, edges: .bottom)
         }
         .preferredColorScheme(.dark)
     }

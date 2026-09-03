@@ -27,6 +27,11 @@ struct HomeView: View {
 
     @State private var tab: Tab = .feed
     @State private var showProfile = false
+    @State private var showSearch = false
+    @State private var showNotifications = false
+    @State private var showMessages = false
+    @State private var showComments = false
+    @State private var showShare = false
 
     @Query(sort: \Post.createdAt, order: .reverse) private var posts: [Post]
     @Query private var sessions: [WorkoutSession]
@@ -55,12 +60,22 @@ struct HomeView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Profile")
 
-                    headerButton("magnifyingglass", label: "Search")
+                    Button { showSearch = true } label: {
+                        headerButton("magnifyingglass", label: "Search")
+                    }
+                    .buttonStyle(.plain)
 
                     Spacer(minLength: 0)
 
-                    headerButton("bell.fill", label: "Notifications", badge: 3)
-                    headerButton("bubble.left.fill", label: "Messages")
+                    Button { showNotifications = true } label: {
+                        headerButton("bell.fill", label: "Notifications", badge: 3)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button { showMessages = true } label: {
+                        headerButton("bubble.left.fill", label: "Messages")
+                    }
+                    .buttonStyle(.plain)
                 }
 
                 PreviewNotice(
@@ -89,6 +104,11 @@ struct HomeView: View {
         .background(Theme.Color.background)
         .navigationDestination(isPresented: $showProfile) { ProfileView() }
         }
+        .sheet(isPresented: $showSearch) { PeopleSearchView() }
+        .sheet(isPresented: $showNotifications) { NotificationsView() }
+        .sheet(isPresented: $showMessages) { MessagesView() }
+        .sheet(isPresented: $showComments) { CommentsView() }
+        .sheet(isPresented: $showShare) { SharePostView() }
     }
 
     private func headerButton(_ symbol: String, label: String, badge: Int = 0) -> some View {
@@ -126,83 +146,38 @@ struct HomeView: View {
                     .padding(.top, 6)
             }
 
-            entry(
-                handle: "mila.calis", initial: "M", when: "22 min ago",
-                movement: "Front Lever", value: "0:09.20",
-                detail: "straddle · 74% line", hasClip: true, isRecord: false
+            PostCard(
+                author: "mila.calis",
+                example: .init(
+                    title: "Front Lever", when: "22 min ago",
+                    caption: "Straddle held for the first time. Hips finally stopped dropping.",
+                    headline: "0:09.20", subhead: "straddle · 74% line",
+                    hasClip: true, likeCount: 14, commentCount: 3
+                ),
+                onComment: { showComments = true },
+                onShare: { showShare = true }
             )
-            entry(
-                handle: "jonas_b", initial: "J", when: "1 h ago",
-                movement: "Pull-Ups", value: "19 reps",
-                detail: "personal best", hasClip: false, isRecord: true
+            PostCard(
+                author: "jonas_b",
+                example: .init(
+                    title: "Pull day", when: "1 h ago",
+                    headline: "19 reps", subhead: "3 movements · personal best",
+                    likeCount: 8, commentCount: 1
+                ),
+                onComment: { showComments = true },
+                onShare: { showShare = true }
             )
-            entry(
-                handle: "rina.hs", initial: "R", when: "3 h ago",
-                movement: "Handstand", value: "1:12.60",
-                detail: "4 holds · 88% line", hasClip: true, isRecord: false
+            PostCard(
+                author: "rina.hs",
+                example: .init(
+                    title: "Handstand", when: "3 h ago",
+                    headline: "1:12.60", subhead: "4 holds · 88% line",
+                    hasClip: true, likeCount: 31, commentCount: 6
+                ),
+                onComment: { showComments = true },
+                onShare: { showShare = true }
             )
         }
-    }
-
-    private func entry(
-        handle: String, initial: String, when: String,
-        movement: String, value: String, detail: String,
-        hasClip: Bool, isRecord: Bool
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                Text(initial)
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Theme.Color.primaryText)
-                    .frame(width: Theme.Metric.rowIconSize, height: Theme.Metric.rowIconSize)
-                    .background(Theme.Color.elevated, in: .circle)
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(handle)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Theme.Color.primaryText)
-                    Text("\(movement) · \(when)")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.Color.secondaryText)
-                }
-                Spacer(minLength: 0)
-
-                // The claim this whole feature rests on: the number came from
-                // a camera, not a text field.
-                Label("Measured", systemImage: "checkmark.seal.fill")
-                    .labelStyle(.iconOnly)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.Color.valid)
-            }
-
-            if hasClip {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(
-                        LinearGradient(
-                            colors: [Theme.Color.elevated, Theme.Color.background],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(height: 120)
-                    .overlay {
-                        Image(systemName: "play.circle.fill")
-                            .font(.system(size: 28))
-                            .foregroundStyle(Theme.Color.primaryText.opacity(0.65))
-                    }
-            }
-
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(value)
-                    .font(.system(size: 20, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Theme.Color.primaryText)
-                Text(detail)
-                    .font(.system(size: 13))
-                    .foregroundStyle(isRecord ? Theme.Color.valid : Theme.Color.secondaryText)
-                Spacer(minLength: 0)
-            }
-        }
-        .padding(14)
-        .background(Theme.Color.card, in: .rect(cornerRadius: Theme.Metric.cardRadius))
     }
 
     // MARK: - Leaderboard

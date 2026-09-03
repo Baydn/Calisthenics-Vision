@@ -2,22 +2,26 @@
 //  SkillTreeView.swift
 //  Calisthenics Vision
 //
-//  Every movement on one map you pan around.
+//  Every movement on one map that grows outward from where you started.
 //
-//  The first version was a ladder per category, which was wrong in two ways.
-//  It implied an order — do this, then that — when people arrive from
-//  wrestling, gymnastics and climbing and can already do things halfway up.
-//  And it hid the shape: the interesting part of calisthenics progression is
-//  that it *branches and rejoins*, which a column can't draw. An L-sit
-//  pull-up needs a pull-up and an L-sit; a planche needs a pseudo-planche
-//  push-up and an elbow lever.
+//  Two earlier attempts were wrong. A ladder per category implied an order
+//  when people arrive from wrestling, gymnastics and climbing already able to
+//  do things halfway up. A difficulty grid fixed the order problem and
+//  replaced it with a wall of evenly spaced dots that read as a spreadsheet.
 //
-//  So: one canvas, difficulty running down, categories across, edges wherever
-//  one movement genuinely leads to another. Nothing is locked. You can start
-//  anywhere and the map just shows you where you are.
+//  This is radial: the root is you, the foundations sit closest, and each ring
+//  outward is a step harder — so the thing you can already do is at the centre
+//  and the map genuinely expands as you get further out. Pinch to zoom, drag
+//  to pan.
 //
-//  Nodes fill from measured sessions — the ring is how close your best effort
-//  is to the target. Every rival's tree is a box you tick.
+//  Nodes change as you advance rather than only filling a ring: a movement you
+//  haven't touched is a small dim dot, one you're working on grows and gains
+//  an arc, one you've earned grows again and takes the accent, and a mastered
+//  one gets a halo. Size carries progress at a glance, which a ring alone
+//  can't do when the map is zoomed out.
+//
+//  Nothing is locked. `Movement.prerequisites` draws where things lead, not
+//  what you're allowed to attempt.
 //
 
 import SwiftData
@@ -27,79 +31,71 @@ struct SkillTreeView: View {
     let sessions: [WorkoutSession]
 
     @State private var selected: Movement?
+    @State private var zoom: CGFloat = 1
+    @State private var committedZoom: CGFloat = 1
+    @State private var pan: CGSize = .zero
+    @State private var committedPan: CGSize = .zero
     @State private var appeared = false
 
     // MARK: - Layout
 
-    private static let nodeSize: CGFloat = 54
-    private static let columnWidth: CGFloat = 108
-    private static let rowHeight: CGFloat = 104
-    private static let topInset: CGFloat = 36
-    private static let sideInset: CGFloat = 26
+    /// Radius per difficulty step, and the canvas built from it.
+    private static let ringGap: CGFloat = 92
+    private static let canvasRadius: CGFloat = ringGap * 10 + 90
+    private static var canvasSize: CGFloat { canvasRadius * 2 }
 
-    /// Grid position for every movement: y from difficulty, x packed within
-    /// its category so branches sit near their siblings.
-    private static let layout: [Movement: CGPoint] = {
+    /// Polar layout: angle groups a movement with its category, radius is its
+    /// difficulty. Categories get a sector each so branches stay together.
+    private static let layout: [Movement: CGPoint] = buildLayout()
+
+    /// Split out of a stored property: as one expression the type-checker
+    /// gives up on it.
+    private static func buildLayout() -> [Movement: CGPoint] {
         var result: [Movement: CGPoint] = [:]
-        var columnCursor = 0
+        let categories = MovementCategory.allCases
+        let sector: Double = (2.0 * Double.pi) / Double(categories.count)
+        let origin: Double = Double(canvasRadius)
+        let gap: Double = Double(ringGap)
 
-        for category in MovementCategory.allCases {
+        for (index, category) in categories.enumerated() {
             let members = Movement.allCases
                 .filter { $0.category == category }
                 .sorted { ($0.difficulty, $0.displayName) < ($1.difficulty, $1.displayName) }
 
-            // Movements sharing a difficulty sit side by side rather than on
-            // top of each other.
-            var usedByRow: [Int: Int] = [:]
-            var widest = 1
+            // Same-difficulty siblings are nudged apart so they don't stack.
+            var perRing: [Int: Int] = [:]
 
             for movement in members {
-                let row = movement.difficulty - 1
-                let offset = usedByRow[row, default: 0]
-                usedByRow[row] = offset + 1
-                widest = max(widest, offset + 1)
-                result[movement] = CGPoint(x: CGFloat(columnCursor + offset), y: CGFloat(row))
+                let ring: Int = movement.difficulty
+                let slot: Int = perRing[ring, default: 0]
+                perRing[ring] = slot + 1
+
+                let base: Double = Double(index) * sector - (Double.pi / 2.0)
+                let jitter: Double = sector * 0.78 * (Double(slot) - 1.0) * 0.30
+                let angle: Double = base + jitter
+
+                let radius: Double = Double(ring) * gap
+                let x: Double = origin + cos(angle) * radius
+                let y: Double = origin + sin(angle) * radius
+                result[movement] = CGPoint(x: x, y: y)
             }
-            columnCursor += widest
         }
         return result
-    }()
-
-    private static let gridWidth: CGFloat = {
-        (layout.values.map(\.x).max() ?? 0) + 1
-    }()
-
-    private static var canvasSize: CGSize {
-        CGSize(
-            width: gridWidth * columnWidth + sideInset * 2,
-            height: 10 * rowHeight + topInset * 2
-        )
     }
 
     private static func position(_ movement: Movement) -> CGPoint {
-        let grid = layout[movement] ?? .zero
-        return CGPoint(
-            x: sideInset + grid.x * columnWidth + columnWidth / 2,
-            y: topInset + grid.y * rowHeight + rowHeight / 2
-        )
+        layout[movement] ?? CGPoint(x: canvasRadius, y: canvasRadius)
+    }
+
+    private static var centre: CGPoint {
+        CGPoint(x: canvasRadius, y: canvasRadius)
     }
 
     // MARK: - Body
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ScrollView([.horizontal, .vertical]) {
-                ZStack(alignment: .topLeading) {
-                    tiers
-                    edges
-                    nodes
-                }
-                .frame(width: Self.canvasSize.width, height: Self.canvasSize.height)
-            }
-            .scrollIndicators(.hidden)
-            .frame(height: 420)
-            .background(Theme.Color.card.opacity(0.35), in: .rect(cornerRadius: Theme.Metric.cardRadius))
-
+            map
             detail
         }
         .onAppear {
@@ -107,26 +103,98 @@ struct SkillTreeView: View {
         }
     }
 
-    /// Faint bands behind the graph so depth is readable without counting.
-    private var tiers: some View {
-        ForEach(0..<10, id: \.self) { row in
-            let isBanded = (row / 2).isMultiple(of: 2)
-            Rectangle()
-                .fill(isBanded ? Theme.Color.primaryText.opacity(0.022) : .clear)
-                .frame(width: Self.canvasSize.width, height: Self.rowHeight)
-                .position(
-                    x: Self.canvasSize.width / 2,
-                    y: Self.topInset + CGFloat(row) * Self.rowHeight + Self.rowHeight / 2
+    private var map: some View {
+        GeometryReader { proxy in
+            ZStack {
+                rings
+                edges
+                root
+                nodes
+            }
+            .frame(width: Self.canvasSize, height: Self.canvasSize)
+            .scaleEffect(zoom)
+            .offset(pan)
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .clipped()
+            .contentShape(.rect)
+            .gesture(
+                SimultaneousGesture(
+                    DragGesture()
+                        .onChanged { value in
+                            pan = CGSize(
+                                width: committedPan.width + value.translation.width,
+                                height: committedPan.height + value.translation.height
+                            )
+                        }
+                        .onEnded { _ in committedPan = pan },
+                    MagnifyGesture()
+                        .onChanged { value in
+                            zoom = min(2.2, max(0.32, committedZoom * value.magnification))
+                        }
+                        .onEnded { _ in committedZoom = zoom }
                 )
-                .overlay(alignment: .topLeading) {
-                    Text("\(row + 1)")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Theme.Color.tertiaryText.opacity(0.7))
-                        .position(
-                            x: 12,
-                            y: Self.topInset + CGFloat(row) * Self.rowHeight + Self.rowHeight / 2
-                        )
-                }
+            )
+            .onAppear {
+                // Open centred on the root, zoomed out enough to see the
+                // foundations and the first branches.
+                committedZoom = 0.5
+                zoom = 0.5
+                let centred = CGSize(
+                    width: proxy.size.width / 2 - Self.canvasRadius * 0.5,
+                    height: proxy.size.height / 2 - Self.canvasRadius * 0.5
+                )
+                pan = centred
+                committedPan = centred
+            }
+        }
+        .frame(height: 440)
+        .background(Theme.Color.card.opacity(0.35), in: .rect(cornerRadius: Theme.Metric.cardRadius))
+        .overlay(alignment: .topTrailing) { zoomControls }
+    }
+
+    private var zoomControls: some View {
+        VStack(spacing: 6) {
+            zoomButton("plus") { setZoom(zoom * 1.35) }
+            zoomButton("minus") { setZoom(zoom / 1.35) }
+        }
+        .padding(10)
+    }
+
+    private func zoomButton(_ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Theme.Color.primaryText)
+                .frame(width: 30, height: 30)
+                .background(Theme.Color.elevated.opacity(0.9), in: .circle)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func setZoom(_ next: CGFloat) {
+        withAnimation(Theme.Motion.selection) {
+            zoom = min(2.2, max(0.32, next))
+            committedZoom = zoom
+        }
+    }
+
+    // MARK: - Canvas layers
+
+    /// Faint rings mark the difficulty steps, so distance from the centre
+    /// reads as difficulty without counting nodes.
+    private var rings: some View {
+        ZStack {
+            ForEach(1..<11, id: \.self) { ring in
+                Circle()
+                    .strokeBorder(
+                        Theme.Color.primaryText.opacity(ring.isMultiple(of: 2) ? 0.05 : 0.025),
+                        lineWidth: 1
+                    )
+                    .frame(
+                        width: Self.ringGap * CGFloat(ring) * 2,
+                        height: Self.ringGap * CGFloat(ring) * 2
+                    )
+            }
         }
     }
 
@@ -134,28 +202,65 @@ struct SkillTreeView: View {
         Canvas { context, _ in
             for movement in Movement.allCases {
                 let to = Self.position(movement)
-                for parent in movement.prerequisites {
-                    let from = Self.position(parent)
+                let parents = movement.prerequisites
+
+                if parents.isEmpty {
+                    // Roots hang off the centre, so the map is one connected
+                    // thing rather than five floating clusters.
                     var path = Path()
-                    path.move(to: from)
-                    // Curved so crossing branches stay tellable apart.
-                    path.addCurve(
-                        to: to,
-                        control1: CGPoint(x: from.x, y: from.y + Self.rowHeight * 0.45),
-                        control2: CGPoint(x: to.x, y: to.y - Self.rowHeight * 0.45)
-                    )
-                    let done = isEarned(parent) && isEarned(movement)
+                    path.move(to: Self.centre)
+                    path.addLine(to: to)
                     context.stroke(
                         path,
-                        with: .color(done
-                                     ? Theme.Color.valid.opacity(0.55)
-                                     : Theme.Color.divider.opacity(0.75)),
-                        style: StrokeStyle(lineWidth: done ? 2 : 1.5, lineCap: .round)
+                        with: .color(Theme.Color.divider.opacity(0.5)),
+                        style: StrokeStyle(lineWidth: 1.2, lineCap: .round)
+                    )
+                    continue
+                }
+
+                for parent in parents {
+                    let from = Self.position(parent)
+                    let mid = CGPoint(x: (from.x + to.x) / 2, y: (from.y + to.y) / 2)
+                    // Bow the line away from the centre so branches fan out
+                    // instead of overlapping the rings.
+                    let outward = CGPoint(
+                        x: mid.x + (mid.x - Self.centre.x) * 0.12,
+                        y: mid.y + (mid.y - Self.centre.y) * 0.12
+                    )
+                    var path = Path()
+                    path.move(to: from)
+                    path.addQuadCurve(to: to, control: outward)
+
+                    let lit = isEarned(parent)
+                    context.stroke(
+                        path,
+                        with: .color(lit
+                                     ? Theme.Color.valid.opacity(0.5)
+                                     : Theme.Color.divider.opacity(0.7)),
+                        style: StrokeStyle(lineWidth: lit ? 2 : 1.3, lineCap: .round)
                     )
                 }
             }
         }
-        .frame(width: Self.canvasSize.width, height: Self.canvasSize.height)
+        .frame(width: Self.canvasSize, height: Self.canvasSize)
+    }
+
+    private var root: some View {
+        VStack(spacing: 4) {
+            Circle()
+                .fill(Theme.Color.primaryText)
+                .frame(width: 34, height: 34)
+                .overlay {
+                    Image(systemName: "figure.stand")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Theme.Color.background)
+                }
+            Text("YOU")
+                .font(.system(size: 9, weight: .bold))
+                .tracking(Theme.Metric.labelTracking)
+                .foregroundStyle(Theme.Color.secondaryText)
+        }
+        .position(Self.centre)
     }
 
     private var nodes: some View {
@@ -164,13 +269,14 @@ struct SkillTreeView: View {
             SkillNode(
                 movement: movement,
                 progress: progress(for: movement),
-                isSelected: selected == movement
+                isSelected: selected == movement,
+                showsLabel: zoom > 0.62
             )
-            .position(x: point.x, y: point.y)
+            .position(point)
             .opacity(appeared ? 1 : 0)
-            .scaleEffect(appeared ? 1 : 0.85)
+            .scaleEffect(appeared ? 1 : 0.7)
             .animation(
-                Theme.Motion.expand.delay(Double(movement.difficulty) * 0.03),
+                Theme.Motion.expand.delay(Double(movement.difficulty) * 0.035),
                 value: appeared
             )
             .onTapGesture {
@@ -183,8 +289,6 @@ struct SkillTreeView: View {
 
     // MARK: - Detail
 
-    /// Tapping a node opens its numbers here rather than pushing a screen —
-    /// the point of a map is staying on it.
     @ViewBuilder
     private var detail: some View {
         if let movement = selected {
@@ -197,7 +301,7 @@ struct SkillTreeView: View {
                         Text(movement.displayName)
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(Theme.Color.primaryText)
-                        Text("\(movement.tier.uppercased()) · \(movement.category.displayName.uppercased())")
+                        Text("\(rank(for: movement)) · \(movement.category.displayName.uppercased())")
                             .cardLabelStyle()
                     }
                     Spacer(minLength: 0)
@@ -234,9 +338,20 @@ struct SkillTreeView: View {
             .background(Theme.Color.card, in: .rect(cornerRadius: Theme.Metric.cardRadius))
             .transition(.opacity.combined(with: .move(edge: .top)))
         } else {
-            Text("Tap any node for its numbers. Nothing is locked — start wherever you already are.")
+            Text("Pinch to zoom, drag to move. Tap a node for its numbers — nothing is locked, so start wherever you already are.")
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.Color.tertiaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func rank(for movement: Movement) -> String {
+        switch progress(for: movement) {
+        case 0:         "UNTOUCHED"
+        case ..<0.5:    "LEARNING"
+        case ..<1:      "CLOSE"
+        case ..<2:      "EARNED"
+        default:        "MASTERED"
         }
     }
 
@@ -261,16 +376,16 @@ struct SkillTreeView: View {
 
     // MARK: - Progress
 
-    /// Best effort against a provisional target: ten seconds for a hold, ten
-    /// reps otherwise.
+    /// Runs past 1: reaching the target earns the node, doubling it masters
+    /// it. Provisional targets — ten seconds for a hold, ten reps otherwise.
     private func progress(for movement: Movement) -> Double {
         let mine = sessions.filter { $0.movement == movement }
         guard !mine.isEmpty else { return 0 }
 
         if movement.isTimedHold {
-            return min(1, (mine.map(\.bestHold).max() ?? 0) / 10)
+            return (mine.map(\.bestHold).max() ?? 0) / 10
         }
-        return min(1, Double(mine.map(\.repCount).max() ?? 0) / 10)
+        return Double(mine.map(\.repCount).max() ?? 0) / 10
     }
 
     private func isEarned(_ movement: Movement) -> Bool { progress(for: movement) >= 1 }
@@ -278,63 +393,89 @@ struct SkillTreeView: View {
 
 // MARK: - Node
 
+/// Grows with how far you've taken the movement, so the map reads at a glance
+/// even zoomed out where labels are hidden.
 private struct SkillNode: View {
     let movement: Movement
     let progress: Double
     let isSelected: Bool
+    let showsLabel: Bool
 
     private var isEarned: Bool { progress >= 1 }
+    private var isMastered: Bool { progress >= 2 }
     private var isStarted: Bool { progress > 0 }
+
+    private var diameter: CGFloat {
+        if isMastered { return 56 }
+        if isEarned { return 48 }
+        if isStarted { return 40 }
+        return 26
+    }
 
     var body: some View {
         VStack(spacing: 5) {
             ZStack {
-                Circle()
-                    .fill(Theme.Color.card)
-                    .frame(width: 54, height: 54)
-
-                Circle()
-                    .stroke(Theme.Color.divider.opacity(0.5), lineWidth: 2.5)
-                    .frame(width: 54, height: 54)
-
-                // The ring: how close your best effort is to the target.
-                if isStarted {
+                if isMastered {
                     Circle()
-                        .trim(from: 0, to: progress)
+                        .fill(Theme.Color.valid.opacity(0.16))
+                        .frame(width: diameter + 16, height: diameter + 16)
+                }
+
+                Circle()
+                    .fill(isEarned ? Theme.Color.valid.opacity(0.18) : Theme.Color.card)
+                    .frame(width: diameter, height: diameter)
+
+                Circle()
+                    .stroke(
+                        isStarted ? Theme.Color.valid.opacity(0.35) : Theme.Color.divider.opacity(0.6),
+                        lineWidth: 2
+                    )
+                    .frame(width: diameter, height: diameter)
+
+                if isStarted && !isEarned {
+                    Circle()
+                        .trim(from: 0, to: min(1, progress))
                         .stroke(
-                            Theme.Color.valid.opacity(isEarned ? 1 : 0.7),
+                            Theme.Color.valid,
                             style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
                         )
                         .rotationEffect(.degrees(-90))
-                        .frame(width: 54, height: 54)
+                        .frame(width: diameter, height: diameter)
                 }
 
-                if isEarned {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 17, weight: .bold))
+                if isMastered {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(Theme.Color.valid)
-                } else {
+                } else if isEarned {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Theme.Color.valid)
+                } else if isStarted {
                     Text("\(movement.difficulty)")
-                        .font(.system(size: 15, weight: .bold, design: .monospaced))
-                        .foregroundStyle(isStarted ? Theme.Color.primaryText : Theme.Color.secondaryText)
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Theme.Color.primaryText)
                 }
             }
             .overlay {
                 if isSelected {
                     Circle()
                         .strokeBorder(Theme.Color.primaryText, lineWidth: 2)
-                        .frame(width: 64, height: 64)
+                        .frame(width: diameter + 12, height: diameter + 12)
                 }
             }
 
-            Text(movement.displayName)
-                .font(.system(size: 9.5, weight: .semibold))
-                .foregroundStyle(isStarted ? Theme.Color.primaryText : Theme.Color.tertiaryText)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .frame(width: 96)
+            if showsLabel {
+                Text(movement.displayName)
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(isStarted ? Theme.Color.primaryText : Theme.Color.tertiaryText)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .frame(width: 92)
+            }
         }
         .contentShape(.rect)
+        .animation(Theme.Motion.selection, value: showsLabel)
     }
 }
 
