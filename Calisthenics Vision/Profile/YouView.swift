@@ -22,31 +22,23 @@ import SwiftUI
 struct YouView: View {
 
     enum Section: String, CaseIterable, Hashable {
-        case activity = "Activity"
-        case calendar = "Calendar"
+        case activities = "Activities"
         case progress = "Progress"
+        case workouts = "Workouts"
     }
 
     @Query(sort: \WorkoutSession.startedAt, order: .reverse)
     private var sessions: [WorkoutSession]
 
-    @Environment(Entitlements.self) private var entitlements
     /// `.compact` is landscape on iPhone, where the header would leave the
     /// list a couple of rows tall.
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
-    @State private var section: Section = .activity
-    @State private var showPaywall = false
-    @State private var settingsSection: SettingsView.Section?
-    @State private var showAllAchievements = false
-    #if DEBUG
-    @State private var showDeveloper = false
-    #endif
+    @State private var section: Section = .activities
+    @State private var showSettings = false
+    @State private var showProfile = false
 
     private var stats: SessionStats { SessionStore.stats(for: sessions) }
-    private var context: AchievementContext {
-        AchievementContext(sessions: sessions, stats: stats)
-    }
     private var isCompact: Bool { verticalSizeClass == .compact }
 
     var body: some View {
@@ -57,13 +49,13 @@ struct YouView: View {
                     .padding(.top, 8)
 
                 Group {
-                    if sessions.isEmpty {
+                    if sessions.isEmpty && section != .workouts {
                         emptyState
                     } else {
                         switch section {
-                        case .activity: HistoryListView(sessions: sessions)
-                        case .calendar: HistoryCalendarView(sessions: sessions)
-                        case .progress: HistoryProgressView(sessions: sessions, stats: stats)
+                        case .activities: HistoryListView(sessions: sessions)
+                        case .progress:   HistoryProgressView(sessions: sessions, stats: stats)
+                        case .workouts:   WorkoutsView()
                         }
                     }
                 }
@@ -77,54 +69,40 @@ struct YouView: View {
             .navigationDestination(for: WorkoutSession.self) { session in
                 SessionReviewView(session: session)
             }
+            .navigationDestination(isPresented: $showProfile) {
+                ProfileView()
+            }
         }
-        .sheet(isPresented: $showPaywall) { PaywallView() }
-        .sheet(item: $settingsSection) { SettingsView(section: $0) }
-        .sheet(isPresented: $showAllAchievements) {
-            AchievementsView(context: context)
-        }
-        #if DEBUG
-        .sheet(isPresented: $showDeveloper) { DeveloperSettingsView() }
-        #endif
+        .sheet(isPresented: $showSettings) { SettingsRootView() }
     }
 
     // MARK: - Header
 
-    /// Kept deliberately short. Everything here competes with the session list
-    /// for the top of the screen, and the list is what the tab is for — so
-    /// identity is one line, the numbers are one row, and achievements are a
-    /// count you tap rather than a shelf you scroll.
+    /// A top bar rather than a profile block: avatar left into the profile,
+    /// gear right into settings, and the sections immediately under it. The
+    /// list is what this tab is for, and everything above it was pushing the
+    /// first row toward the middle of the screen.
     private var header: some View {
-        VStack(spacing: isCompact ? 12 : 16) {
-            identity
-
-            if !isCompact { summaryRow }
-
-            SegmentedControl(segments: Section.allCases, title: \.rawValue, selection: $section)
-        }
-    }
-
-    private var identity: some View {
-        HStack(spacing: 12) {
-            Circle()
-                .fill(Theme.Color.card)
-                .frame(width: 44, height: 44)
-                .overlay {
-                    Image(systemName: "person.fill")
-                        .font(.system(size: 19))
-                        .foregroundStyle(Theme.Color.secondaryText)
+        VStack(spacing: isCompact ? 10 : 14) {
+            HStack(spacing: 12) {
+                Button { showProfile = true } label: {
+                    Circle()
+                        .fill(Theme.Color.card)
+                        .frame(width: 36, height: 36)
+                        .overlay {
+                            Image(systemName: "person.fill")
+                                .font(.system(size: 16))
+                                .foregroundStyle(Theme.Color.secondaryText)
+                        }
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Profile")
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Baydon")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(Theme.Color.primaryText)
-
-                HStack(spacing: 6) {
-                    Text(entitlements.isProUnlocked ? "PRO" : "FREE")
-                        .cardLabelStyle()
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("You")
+                        .font(Theme.Font.header())
+                        .foregroundStyle(Theme.Color.primaryText)
                     if stats.dayStreak > 0 {
-                        Text("·").cardLabelStyle()
                         HStack(spacing: 3) {
                             Image(systemName: "flame.fill")
                                 .font(.system(size: 9, weight: .semibold))
@@ -135,52 +113,21 @@ struct YouView: View {
                         .foregroundStyle(Theme.Color.valid)
                     }
                 }
-            }
 
-            Spacer(minLength: 0)
+                Spacer(minLength: 0)
 
-            Menu {
-                Button("Feedback") { settingsSection = .feedback }
-                Button("Storage") { settingsSection = .storage }
-                if !entitlements.isProUnlocked {
-                    Button("Upgrade to Pro") { showPaywall = true }
+                Button { showSettings = true } label: {
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.Color.secondaryText)
+                        .frame(width: 36, height: 36)
+                        .background(Theme.Color.card, in: .circle)
                 }
-                #if DEBUG
-                Divider()
-                Button("Developer") { showDeveloper = true }
-                #endif
-            } label: {
-                Image(systemName: "gearshape.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.Color.secondaryText)
-                    .frame(width: 34, height: 34)
-                    .background(Theme.Color.card, in: .circle)
-            }
-        }
-    }
-
-    /// Three numbers, one of which is a door. Folding achievements in here
-    /// removed a whole scrolling shelf from the top of the screen.
-    private var summaryRow: some View {
-        HStack(spacing: 8) {
-            StatCard(value: "\(stats.totalSessions)", label: "SESSIONS")
-
-            if stats.repsThisWeek == 0 && stats.holdTimeThisWeek > 0 {
-                StatCard(
-                    value: SessionResult.durationLabel(stats.holdTimeThisWeek),
-                    label: "HELD THIS WK"
-                )
-            } else {
-                StatCard(value: "\(stats.repsThisWeek)", label: "REPS THIS WK")
+                .buttonStyle(.plain)
+                .accessibilityLabel("Settings")
             }
 
-            Button { showAllAchievements = true } label: {
-                StatCard(
-                    value: "\(Achievements.earned(in: context).count)",
-                    label: "ACHIEVEMENTS ›"
-                )
-            }
-            .buttonStyle(.plain)
+            SegmentedControl(segments: Section.allCases, title: \.rawValue, selection: $section)
         }
     }
 

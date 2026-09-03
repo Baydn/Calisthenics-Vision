@@ -25,21 +25,38 @@ struct HomeView: View {
     }
 
     @State private var tab: Tab = .feed
+    @State private var showProfile = false
     @State private var movement: Movement = .handstand
     @State private var scope = "Global"
 
     var body: some View {
+        NavigationStack {
         VStack(spacing: 0) {
             VStack(spacing: 16) {
-                HStack(alignment: .center) {
-                    ScreenHeader(title: "Home")
-                    Spacer(minLength: 8)
-                    // Finding people and talking to them are the two things a
-                    // feed is useless without. Both are entry points only.
-                    HStack(spacing: 8) {
-                        headerButton("magnifyingglass")
-                        headerButton("bubble.left.fill")
+                // Avatar and search on the left, notifications and messages on
+                // the right — the arrangement every feed converges on, because
+                // it puts identity and finding people at the thumb end and
+                // keeps the incoming stuff out of the way of the scroll.
+                HStack(spacing: 10) {
+                    Button { showProfile = true } label: {
+                        Circle()
+                            .fill(Theme.Color.card)
+                            .frame(width: 36, height: 36)
+                            .overlay {
+                                Image(systemName: "person.fill")
+                                    .font(.system(size: 16))
+                                    .foregroundStyle(Theme.Color.secondaryText)
+                            }
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Profile")
+
+                    headerButton("magnifyingglass", label: "Search")
+
+                    Spacer(minLength: 0)
+
+                    headerButton("bell.fill", label: "Notifications", badge: 3)
+                    headerButton("bubble.left.fill", label: "Messages")
                 }
 
                 PreviewNotice(
@@ -66,14 +83,27 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.Color.background)
+        .navigationDestination(isPresented: $showProfile) { ProfileView() }
+        }
     }
 
-    private func headerButton(_ symbol: String) -> some View {
+    private func headerButton(_ symbol: String, label: String, badge: Int = 0) -> some View {
         Image(systemName: symbol)
             .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(Theme.Color.secondaryText)
             .frame(width: 36, height: 36)
             .background(Theme.Color.card, in: .circle)
+            .overlay(alignment: .topTrailing) {
+                if badge > 0 {
+                    Text("\(badge)")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Theme.Color.background)
+                        .frame(minWidth: 16, minHeight: 16)
+                        .background(Theme.Color.warning, in: .circle)
+                        .offset(x: 3, y: -3)
+                }
+            }
+            .accessibilityLabel(label)
     }
 
     // MARK: - Feed
