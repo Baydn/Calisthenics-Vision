@@ -37,14 +37,19 @@ final class CaptureStack {
     @ObservationIgnored private var transition: Task<Void, Never>?
 
     /// Starts capture and pose detection, or does nothing if already running.
-    func activate(position: AVCaptureDevice.Position, preferUltraWide: Bool) {
+    ///
+    /// Always opens front-facing on the wide lens. Which camera and which
+    /// lens are live controls on the Train screen, not stored preferences —
+    /// they're decided by where the phone is standing, which changes every
+    /// session.
+    func activate() {
         isActive = true
         let previous = transition
         transition = Task { [camera, pose] in
             await previous?.value
             guard isActive else { return }
 
-            await camera.start(position: position, preferUltraWide: preferUltraWide)
+            await camera.start(position: .front, preferUltraWide: false)
             // The suspend may have landed while the camera was starting.
             guard isActive else {
                 camera.stop()

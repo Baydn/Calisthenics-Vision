@@ -77,10 +77,7 @@ struct RepTestView: View {
         }
         .task {
             poseSession.onPose = handlePose
-            capture.activate(
-                position: settings.cameraPosition,
-                preferUltraWide: settings.prefersUltraWide
-            )
+            capture.activate()
             Haptics.prepare()
         }
         .onDisappear {

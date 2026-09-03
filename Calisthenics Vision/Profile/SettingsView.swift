@@ -12,7 +12,9 @@ import SwiftUI
 struct SettingsView: View {
 
     enum Section: String, Identifiable {
-        case camera = "Camera Setup"
+        // Camera setup lives on the Train screen, not here: which camera,
+        // which lens and how long the countdown runs are decided by where
+        // you've just propped the phone, not once in a settings screen.
         case feedback = "Feedback"
         case storage = "Storage"
 
@@ -40,7 +42,6 @@ struct SettingsView: View {
                     header
 
                     switch section {
-                    case .camera:   cameraSection
                     case .feedback: feedbackSection
                     case .storage:  storageSection
                     }
@@ -76,41 +77,6 @@ struct SettingsView: View {
         .padding(.bottom, 20)
     }
 
-    // MARK: - Camera
-
-    @ViewBuilder
-    private var cameraSection: some View {
-        @Bindable var settings = settings
-
-        toggleRow(
-            "Start on front camera",
-            note: "You can see yourself while getting into position.",
-            isOn: $settings.usesFrontCamera
-        )
-
-        toggleRow(
-            "Prefer 0.5× lens",
-            note: "Fits more of your body in frame when the phone can't go far back. Ignored on cameras without an ultra-wide.",
-            isOn: $settings.prefersUltraWide
-        )
-
-        label("COUNTDOWN")
-        Picker("Countdown", selection: $settings.countdownSeconds) {
-            Text("Off").tag(0)
-            Text("3s").tag(3)
-            Text("5s").tag(5)
-            Text("10s").tag(10)
-        }
-        .pickerStyle(.segmented)
-        caption("Time to get into position after tapping record. Each second gives a haptic tick, so you don't have to watch the screen.")
-
-        toggleRow(
-            "Record video",
-            note: "Off saves telemetry only — a few hundred KB per set instead of roughly 150 MB per ten minutes. Session Review needs video to play anything back.",
-            isOn: $settings.recordsVideo
-        )
-    }
-
     // MARK: - Feedback
 
     @ViewBuilder
@@ -131,22 +97,31 @@ struct SettingsView: View {
 
         label("AUDIO COACHING")
         HStack {
-            Text(entitlements.isProUnlocked ? "Not built yet" : "Requires Pro")
+            Text(settings.audioCoaching ? "On" : "Off")
                 .font(Theme.Font.body())
                 .foregroundStyle(Theme.Color.secondaryText)
             Spacer()
-            Image(systemName: entitlements.isProUnlocked ? "hourglass" : "lock.fill")
+            Image(systemName: settings.audioCoaching
+                  ? "speaker.wave.2.fill" : "speaker.slash.fill")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.Color.secondaryText)
         }
         .frame(height: 44)
-        caption("Spoken rep counts and form cues. Not implemented yet — this row is honest about that rather than offering a switch that does nothing.")
+        caption("Spoken rep counts, hold time and form cues. Toggled on the Train screen, where you decide it — and where you can turn it off the moment someone walks in.")
     }
 
     // MARK: - Storage
 
     @ViewBuilder
     private var storageSection: some View {
+        @Bindable var settings = settings
+
+        toggleRow(
+            "Record video",
+            note: "Off saves telemetry only — a few hundred KB per set instead of roughly 150 MB per ten minutes. Session Review needs video to play anything back.",
+            isOn: $settings.recordsVideo
+        )
+
         infoRow("Sessions", "\(sessions.count)")
         infoRow("Recordings and telemetry", storageSize)
         caption("Video dominates this. A ten-minute set is roughly 150 MB, while its telemetry is under a megabyte.")
@@ -239,7 +214,7 @@ struct SettingsView: View {
 }
 
 #Preview {
-    SettingsView(section: .camera)
+    SettingsView(section: .feedback)
         .environment(Entitlements())
         .modelContainer(SampleSessions.previewContainer)
 }

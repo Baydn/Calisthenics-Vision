@@ -88,10 +88,7 @@ struct TrainIdleView: View {
         }
         .task {
             poseSession.onPose = handlePose
-            capture.activate(
-                position: settings.cameraPosition,
-                preferUltraWide: settings.prefersUltraWide
-            )
+            capture.activate()
             // A workout is minutes of not touching the phone. Letting the
             // screen dim mid-set would be the single most annoying bug here.
             UIApplication.shared.isIdleTimerDisabled = settings.keepsScreenAwake
@@ -131,17 +128,25 @@ struct TrainIdleView: View {
                 Spacer()
 
                 // Zoom sits directly above the shutter, where a camera app
-                // puts it — it belongs to the shot you're about to take, not
-                // to the chrome at the top of the screen.
+                // puts it — it's part of framing the shot you're about to
+                // take, not a side feature.
                 VStack(spacing: 14) {
-                    HStack(spacing: 12) {
-                        audioButton
-                        lensButton
-                        tuneButton
-                    }
+                    lensButton
                     recordButton
                 }
                 .padding(.bottom, Theme.Metric.tabBarClearance + 8)
+            }
+
+            // Coaching and tuning are side features and live on the edge,
+            // out of the way of the shutter.
+            HStack {
+                Spacer()
+                VStack(spacing: 12) {
+                    audioButton
+                    timerButton
+                    tuneButton
+                }
+                .padding(.trailing, 18)
             }
 
             // Flip lines up with the tab bar rather than floating over the
@@ -177,8 +182,9 @@ struct TrainIdleView: View {
                 Spacer()
                 VStack(spacing: 12) {
                     audioButton
-                    lensButton
+                    timerButton
                     tuneButton
+                    lensButton
                     recordButton
                         .scaleEffect(0.78)
                 }
@@ -460,13 +466,15 @@ struct TrainIdleView: View {
     private var centrepiece: some View {
         switch phase {
         case .idle:
-            // No counter before a set exists — a big 0 sitting there reads as
-            // "already counting", and the reps it shows belong to no session.
-            if poseSession.pose != nil {
-                readyPrompt
-            } else {
-                framingHint
-            }
+            // Nothing at all before a set starts.
+            //
+            // There used to be a "you're in frame / step into frame" prompt
+            // here. It was wrong about how the app is actually used: you prop
+            // the phone up, tap record, and *then* walk into shot — so being
+            // out of frame at this moment is the normal case, not a problem
+            // to report. The only thing worth saying is when the camera
+            // itself can't run.
+            cameraProblem
 
         case .countdown:
             // Deliberately empty: the countdown overlay owns the centre of the
@@ -478,22 +486,33 @@ struct TrainIdleView: View {
         }
     }
 
-    /// Shown once you're detected but before a set starts.
-    private var readyPrompt: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 30))
-                .foregroundStyle(Theme.Color.valid)
-
-            Text("You're in frame")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(Theme.Color.primaryText)
-
-            Text("Tap record to start your set")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(Theme.Color.secondaryText)
+    /// Shown only when the camera genuinely can't run. Silence otherwise.
+    @ViewBuilder
+    private var cameraProblem: some View {
+        switch camera.status {
+        case .running, .idle:
+            EmptyView()
+        case .unauthorized:
+            problemNotice("Camera access is off", "Enable it in Settings to track a set.")
+        case .unavailable(let reason):
+            problemNotice("No camera available", reason)
         }
-        .padding(.horizontal, 22)
+    }
+
+    private func problemNotice(_ title: String, _ detail: String) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: "video.slash")
+                .font(.system(size: 26))
+                .foregroundStyle(Theme.Color.secondaryText)
+            Text(title)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Theme.Color.primaryText)
+            Text(detail)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(Theme.Color.secondaryText)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, 24)
         .padding(.vertical, 18)
         .background(.black.opacity(0.35), in: .rect(cornerRadius: 16))
     }
@@ -629,27 +648,6 @@ struct TrainIdleView: View {
         .background(.black.opacity(0.35), in: .rect(cornerRadius: 16))
     }
 
-    private var framingHint: some View {
-        VStack(spacing: 28) {
-            GhostFigure()
-                .frame(width: 120, height: 160)
-
-            Text(framingMessage)
-                .font(.system(size: 17, weight: .regular))
-                .foregroundStyle(Theme.Color.secondaryText)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
-        }
-    }
-
-    private var framingMessage: String {
-        switch camera.status {
-        case .running, .idle:  "Step into frame to begin"
-        case .unauthorized:    "Camera access is off — enable it in Settings"
-        case .unavailable:     "No camera available on this device"
-        }
-    }
-
     private func countdownOverlay(_ value: Int) -> some View {
         ZStack {
             Color.black.opacity(0.35).ignoresSafeArea()
@@ -760,6 +758,37 @@ struct TrainIdleView: View {
         .buttonStyle(.plain)
     }
 
+    /// Countdown length, cycled in place the way a camera app does it —
+    /// it's decided by how far you have to walk after tapping record, which
+    /// changes every time you set the phone down.
+    private var timerButton: some View {
+        Button {
+            let options = [0, 3, 5, 10]
+            let next = (options.firstIndex(of: settings.countdownSeconds) ?? 1) + 1
+            settings.countdownSeconds = options[next % options.count]
+        } label: {
+            ZStack {
+                Image(systemName: settings.countdownSeconds == 0
+                      ? "timer.circle" : "timer")
+                    .font(.system(size: 14, weight: .semibold))
+                    .opacity(settings.countdownSeconds == 0 ? 1 : 0)
+                Text("\(settings.countdownSeconds)s")
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .opacity(settings.countdownSeconds == 0 ? 0 : 1)
+            }
+            .foregroundStyle(settings.countdownSeconds == 0
+                             ? Theme.Color.primaryText : Theme.Color.background)
+            .frame(width: 36, height: 36)
+            .background(
+                settings.countdownSeconds == 0
+                    ? AnyShapeStyle(Theme.Color.card.opacity(0.8))
+                    : AnyShapeStyle(Theme.Color.primaryText),
+                in: .circle
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
     /// Per-movement tuning. Currently coaching detail and push-up depth;
     /// this is where movement-specific settings accumulate.
     private var tuneButton: some View {
@@ -852,39 +881,6 @@ struct TrainIdleView: View {
         tracker = TrackerFactory.make(for: movement)
         progress = tracker?.progress ?? MovementProgress()
         lastEvent = nil
-    }
-}
-
-// MARK: - Ghost figure
-
-/// The faint standing figure used as a framing guide.
-private struct GhostFigure: View {
-    var body: some View {
-        GeometryReader { proxy in
-            let w = proxy.size.width
-            let h = proxy.size.height
-            let stroke = Theme.Color.secondaryText.opacity(0.55)
-
-            ZStack {
-                Circle()
-                    .fill(Theme.Color.secondaryText.opacity(0.45))
-                    .frame(width: w * 0.36, height: w * 0.36)
-                    .position(x: w / 2, y: h * 0.14)
-
-                Path { path in
-                    path.move(to: CGPoint(x: w / 2, y: h * 0.30))
-                    path.addLine(to: CGPoint(x: w / 2, y: h * 0.72))
-                    path.move(to: CGPoint(x: w * 0.14, y: h * 0.46))
-                    path.addLine(to: CGPoint(x: w / 2, y: h * 0.30))
-                    path.addLine(to: CGPoint(x: w * 0.86, y: h * 0.46))
-                    path.move(to: CGPoint(x: w * 0.22, y: h * 0.94))
-                    path.addLine(to: CGPoint(x: w * 0.42, y: h * 0.72))
-                    path.addLine(to: CGPoint(x: w * 0.58, y: h * 0.72))
-                    path.addLine(to: CGPoint(x: w * 0.78, y: h * 0.94))
-                }
-                .stroke(stroke, style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
-            }
-        }
     }
 }
 

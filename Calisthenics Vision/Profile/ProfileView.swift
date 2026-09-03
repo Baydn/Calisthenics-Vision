@@ -191,8 +191,6 @@ struct ProfileView: View {
 
     private var settingsRows: some View {
         VStack(spacing: 0) {
-            settingRow("Camera Setup") { settingsSection = .camera }
-            separator
             settingRow("Feedback") { settingsSection = .feedback }
             separator
             settingRow("Storage") { settingsSection = .storage }

@@ -18,18 +18,8 @@ final class AppSettings {
 
     static let shared = AppSettings()
 
-    /// Which camera a session starts on.
-    var usesFrontCamera: Bool {
-        didSet { defaults.set(usesFrontCamera, forKey: Keys.frontCamera) }
-    }
-
-    /// Start on the ultra-wide lens where the hardware has one — useful in a
-    /// small room where you can't get the phone far enough back.
-    var prefersUltraWide: Bool {
-        didSet { defaults.set(prefersUltraWide, forKey: Keys.ultraWide) }
-    }
-
     /// Seconds of countdown before a set begins. 0 starts immediately.
+    /// Set from the Train screen, where it's decided.
     var countdownSeconds: Int {
         didSet { defaults.set(countdownSeconds, forKey: Keys.countdown) }
     }
@@ -123,13 +113,14 @@ final class AppSettings {
         didSet { defaults.set(repDepth.rawValue, forKey: Keys.repDepth) }
     }
 
-    var cameraPosition: AVCaptureDevice.Position { usesFrontCamera ? .front : .back }
+    /// Always opens on the front camera: while setting up you're looking at
+    /// the phone, and seeing your own skeleton is how you know it's working.
+    /// Flipping is a control on the Train screen, not a stored preference.
+    var cameraPosition: AVCaptureDevice.Position { .front }
 
     private let defaults: UserDefaults
 
     private enum Keys {
-        static let frontCamera = "settings.frontCamera"
-        static let ultraWide = "settings.ultraWide"
         static let countdown = "settings.countdownSeconds"
         static let haptics = "settings.haptics"
         static let screenAwake = "settings.keepScreenAwake"
@@ -147,8 +138,6 @@ final class AppSettings {
         self.defaults = defaults
         // `object(forKey:)` distinguishes "never set" from "set to false", so
         // defaults land on sensible values rather than everything off.
-        usesFrontCamera = defaults.object(forKey: Keys.frontCamera) as? Bool ?? true
-        prefersUltraWide = defaults.object(forKey: Keys.ultraWide) as? Bool ?? false
         countdownSeconds = defaults.object(forKey: Keys.countdown) as? Int ?? 3
         hapticsEnabled = defaults.object(forKey: Keys.haptics) as? Bool ?? true
         keepsScreenAwake = defaults.object(forKey: Keys.screenAwake) as? Bool ?? true
@@ -165,15 +154,13 @@ final class AppSettings {
 
     #if DEBUG
     func resetToDefaults() {
-        for key in [Keys.frontCamera, Keys.ultraWide, Keys.countdown,
+        for key in [Keys.countdown,
                     Keys.haptics, Keys.screenAwake, Keys.recordsVideo,
                     Keys.audioCoaching, Keys.speaksReps, Keys.speaksHoldTime,
                     Keys.speaksFormCues, Keys.speaksCountdown,
                     Keys.holdInterval, Keys.repDepth] {
             defaults.removeObject(forKey: key)
         }
-        usesFrontCamera = true
-        prefersUltraWide = false
         countdownSeconds = 3
         hapticsEnabled = true
         keepsScreenAwake = true
