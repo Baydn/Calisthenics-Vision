@@ -11,9 +11,16 @@
 //  gets written.
 //
 
+import SwiftData
 import SwiftUI
 
 struct WorkoutsView: View {
+
+    @Query(sort: \Workout.createdAt, order: .reverse) private var workouts: [Workout]
+    @Query private var sessions: [WorkoutSession]
+
+    @State private var showBuilder = false
+    @State private var posting: Workout?
 
     private struct Routine {
         let name: String
@@ -42,39 +49,104 @@ struct WorkoutsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                Button { showBuilder = true } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Group sets into a workout")
+                            .font(.system(size: 15, weight: .semibold))
+                        Spacer(minLength: 0)
+                    }
+                    .foregroundStyle(Theme.Color.background)
+                    .padding(.horizontal, 16)
+                    .frame(height: 48)
+                    .background(Theme.Color.primaryText, in: .rect(cornerRadius: Theme.Metric.cardRadius))
+                }
+                .buttonStyle(.plain)
+
+                if workouts.isEmpty {
+                    Text("Nothing grouped yet. Record a few sets, then tick the ones that belong together.")
+                        .font(Theme.Font.body())
+                        .foregroundStyle(Theme.Color.secondaryText)
+                        .padding(.bottom, 6)
+                } else {
+                    ForEach(workouts) { workout in
+                        savedCard(workout)
+                    }
+                }
+
+                Text("EXAMPLE ROUTINES").sectionHeaderStyle().padding(.top, 8)
+
                 PreviewNotice(
-                    "Routines can't be run yet — a set spanning several movements needs review to segment per step first. This is the shape, not the feature."
+                    "Routines can't be run yet — a set spanning several movements needs review to segment per step first. These are the shape, not the feature."
                 )
 
                 ForEach(Array(routines.enumerated()), id: \.offset) { _, routine in
                     card(routine)
                 }
 
-                Button {} label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text("Build a routine")
-                            .font(Theme.Font.control())
-                    }
-                    .foregroundStyle(Theme.Color.secondaryText)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 50)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: Theme.Metric.cardRadius)
-                            .strokeBorder(
-                                Theme.Color.divider,
-                                style: StrokeStyle(lineWidth: 1, dash: [5, 4])
-                            )
-                    }
-                }
-                .buttonStyle(.plain)
-                .disabled(true)
             }
             .padding(.horizontal, Theme.Metric.screenPadding)
             .padding(.bottom, 32)
         }
         .scrollIndicators(.hidden)
+        .sheet(isPresented: $showBuilder) { WorkoutBuilderView() }
+        .sheet(item: $posting) { workout in
+            PostComposerView(sessionIDs: workout.sessionIDs, workoutID: workout.id)
+        }
+    }
+
+    /// A workout you actually did, as opposed to the examples below it.
+    private func savedCard(_ workout: Workout) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(workout.name)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Theme.Color.primaryText)
+                Spacer(minLength: 8)
+                Text(workout.createdAt.formatted(.dateTime.month(.abbreviated).day()).uppercased())
+                    .cardLabelStyle()
+            }
+
+            Text(workout.summary(from: sessions))
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.Color.secondaryText)
+
+            VStack(spacing: 0) {
+                ForEach(workout.sessions(from: sessions)) { session in
+                    HStack(spacing: 10) {
+                        DifficultyPill(level: session.movement.difficulty)
+                        Text(session.movement.displayName)
+                            .font(.system(size: 14))
+                            .foregroundStyle(Theme.Color.primaryText)
+                        Spacer(minLength: 8)
+                        Text(session.result.displayValue)
+                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Theme.Color.secondaryText)
+                    }
+                    .frame(height: 38)
+                }
+            }
+
+            Button { posting = workout } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Post this workout")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .foregroundStyle(Theme.Color.valid)
+                .frame(maxWidth: .infinity)
+                .frame(height: 38)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .overlay(alignment: .top) {
+                Rectangle().fill(Theme.Color.rowSeparator).frame(height: 1)
+            }
+        }
+        .padding(16)
+        .background(Theme.Color.card, in: .rect(cornerRadius: Theme.Metric.cardRadius))
     }
 
     private func card(_ routine: Routine) -> some View {

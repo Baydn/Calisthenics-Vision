@@ -14,7 +14,7 @@ struct Calisthenics_VisionApp: App {
 
     private let container: ModelContainer = {
         do {
-            return try ModelContainer(for: WorkoutSession.self)
+            return try ModelContainer(for: WorkoutSession.self, Workout.self, Post.self)
         } catch {
             fatalError("Could not create the model container: \(error)")
         }

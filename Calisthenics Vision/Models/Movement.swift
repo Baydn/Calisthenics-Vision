@@ -259,6 +259,56 @@ enum Movement: String, CaseIterable, Identifiable, Hashable, Codable {
         }
     }
 
+    /// What usually comes before this, as a graph rather than a ladder.
+    ///
+    /// Nothing here gates anything — you can attempt any movement at any
+    /// time, and the tree draws these as suggestions of where a movement
+    /// leads. A skill tree that locks you out is a game mechanic; this is a
+    /// map, and people arrive at calisthenics from wrestling, gymnastics and
+    /// climbing with wildly different starting points.
+    ///
+    /// Several movements have more than one parent, which is the whole reason
+    /// this isn't a list: an L-sit pull-up needs both a pull-up and an L-sit.
+    var prerequisites: [Movement] {
+        switch self {
+        // Push
+        case .dip, .pikePushUp, .pseudoPlanchePushUp, .oneArmPushUp: [.pushUps]
+        case .handstandPushUp:      [.pikePushUp, .handstand]
+        case .planchePushUp:        [.pseudoPlanchePushUp, .planche]
+
+        // Pull
+        case .australianRow, .negativePullUp, .hangingKneeRaise: [.deadHang]
+        case .pullUps:              [.negativePullUp, .australianRow]
+        case .wideGripPullUp, .muscleUps, .oneArmPullUp: [.pullUps]
+        case .lSitPullUp:           [.pullUps, .lSit]
+
+        // Legs
+        case .squat:                [.wallSit]
+        case .jumpSquat, .lunge, .cossackSquat, .nordicCurl: [.squat]
+        case .bulgarianSplitSquat:  [.lunge]
+        case .shrimpSquat, .pistolSquat: [.bulgarianSplitSquat]
+
+        // Core & static
+        case .sidePlank, .hollowBody: [.plank]
+        case .lSit, .dragonFlag:    [.hollowBody]
+        case .vSit:                 [.lSit]
+        case .hangingLegRaise:      [.hangingKneeRaise]
+        case .toesToBar:            [.hangingLegRaise]
+        case .backLever:            [.hollowBody, .deadHang]
+        case .frontLever:           [.backLever]
+        case .humanFlag:            [.sidePlank, .backLever]
+        case .planche:              [.pseudoPlanchePushUp, .elbowLever]
+
+        // Skill
+        case .elbowLever:           [.crowStand]
+        case .handstand:            [.crowStand]
+        case .pressToHandstand, .handstandWalk: [.handstand]
+
+        // Roots — nothing comes before these.
+        case .pushUps, .deadHang, .wallSit, .plank, .sitUp, .crowStand: []
+        }
+    }
+
     /// One line on what this movement is, shown in the library.
     var summary: String {
         isTimedHold

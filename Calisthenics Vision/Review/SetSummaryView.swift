@@ -23,6 +23,7 @@ struct SetSummaryView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Query private var allSessions: [WorkoutSession]
+    @State private var showComposer = false
 
     private var context: PerformanceContext {
         SessionStore.context(for: session, among: allSessions)
@@ -67,10 +68,29 @@ struct SetSummaryView: View {
         .scrollIndicators(.hidden)
         .background(Theme.Color.background)
         .safeAreaInset(edge: .bottom) {
-            PrimaryButton(title: "Done") { dismiss() }
-                .padding(.horizontal, Theme.Metric.screenPadding)
-                .padding(.bottom, 22)
-                .background(Theme.Color.background)
+            HStack(spacing: 10) {
+                Button { showComposer = true } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text("Post")
+                            .font(.system(size: 16, weight: .semibold))
+                    }
+                    .foregroundStyle(Theme.Color.primaryText)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(Theme.Color.card, in: .capsule)
+                }
+                .buttonStyle(.plain)
+
+                PrimaryButton(title: "Done") { dismiss() }
+            }
+            .padding(.horizontal, Theme.Metric.screenPadding)
+            .padding(.bottom, 22)
+            .background(Theme.Color.background)
+        }
+        .sheet(isPresented: $showComposer) {
+            PostComposerView(sessionIDs: [session.id])
         }
         .preferredColorScheme(.dark)
     }

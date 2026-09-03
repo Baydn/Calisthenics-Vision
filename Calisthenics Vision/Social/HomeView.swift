@@ -15,6 +15,7 @@
 //  and comes first; this comes after, and only if people actually share.
 //
 
+import SwiftData
 import SwiftUI
 
 struct HomeView: View {
@@ -26,6 +27,9 @@ struct HomeView: View {
 
     @State private var tab: Tab = .feed
     @State private var showProfile = false
+
+    @Query(sort: \Post.createdAt, order: .reverse) private var posts: [Post]
+    @Query private var sessions: [WorkoutSession]
     @State private var movement: Movement = .handstand
     @State private var scope = "Global"
 
@@ -110,6 +114,18 @@ struct HomeView: View {
 
     private var feed: some View {
         VStack(spacing: 14) {
+            // Yours first — they're the only real ones.
+            ForEach(posts) { post in
+                PostCard(post: post, sessions: sessions)
+            }
+
+            if !posts.isEmpty {
+                Text("EVERYTHING BELOW IS INVENTED")
+                    .sectionHeaderStyle()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 6)
+            }
+
             entry(
                 handle: "mila.calis", initial: "M", when: "22 min ago",
                 movement: "Front Lever", value: "0:09.20",

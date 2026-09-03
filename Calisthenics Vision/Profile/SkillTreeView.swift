@@ -2,20 +2,22 @@
 //  SkillTreeView.swift
 //  Calisthenics Vision
 //
-//  Your skills as a branching tree, one branch per category.
+//  Every movement on one map you pan around.
 //
-//  Every rival has one of these and every one of them is self-reported: you
-//  tap a node to say you can do it. Ours fills from measured sessions, which
-//  is why the progress ring matters — it isn't decoration, it's how close
-//  your best recorded effort is to the node's criterion.
+//  The first version was a ladder per category, which was wrong in two ways.
+//  It implied an order — do this, then that — when people arrive from
+//  wrestling, gymnastics and climbing and can already do things halfway up.
+//  And it hid the shape: the interesting part of calisthenics progression is
+//  that it *branches and rejoins*, which a column can't draw. An L-sit
+//  pull-up needs a pull-up and an L-sit; a planche needs a pseudo-planche
+//  push-up and an elbow lever.
 //
-//  The ring idea is Calistree's, and it's the right one: a node that's part
-//  done reads very differently from one that's locked, and "part done" is the
-//  state you're in most of the time.
+//  So: one canvas, difficulty running down, categories across, edges wherever
+//  one movement genuinely leads to another. Nothing is locked. You can start
+//  anywhere and the map just shows you where you are.
 //
-//  Thresholds below are provisional and marked as such on screen. They're the
-//  one thing here that isn't derived from anything — picking them properly
-//  needs a coach, not a developer.
+//  Nodes fill from measured sessions — the ring is how close your best effort
+//  is to the target. Every rival's tree is a box you tick.
 //
 
 import SwiftData
@@ -24,236 +26,315 @@ import SwiftUI
 struct SkillTreeView: View {
     let sessions: [WorkoutSession]
 
-    @State private var category: MovementCategory = .push
+    @State private var selected: Movement?
     @State private var appeared = false
 
-    /// The branch for the chosen category, easiest first — which is also the
-    /// order you'd learn them in.
-    private var branch: [Movement] {
-        Movement.allCases
-            .filter { $0.category == category }
-            .sorted { ($0.difficulty, $0.displayName) < ($1.difficulty, $1.displayName) }
+    // MARK: - Layout
+
+    private static let nodeSize: CGFloat = 54
+    private static let columnWidth: CGFloat = 108
+    private static let rowHeight: CGFloat = 104
+    private static let topInset: CGFloat = 36
+    private static let sideInset: CGFloat = 26
+
+    /// Grid position for every movement: y from difficulty, x packed within
+    /// its category so branches sit near their siblings.
+    private static let layout: [Movement: CGPoint] = {
+        var result: [Movement: CGPoint] = [:]
+        var columnCursor = 0
+
+        for category in MovementCategory.allCases {
+            let members = Movement.allCases
+                .filter { $0.category == category }
+                .sorted { ($0.difficulty, $0.displayName) < ($1.difficulty, $1.displayName) }
+
+            // Movements sharing a difficulty sit side by side rather than on
+            // top of each other.
+            var usedByRow: [Int: Int] = [:]
+            var widest = 1
+
+            for movement in members {
+                let row = movement.difficulty - 1
+                let offset = usedByRow[row, default: 0]
+                usedByRow[row] = offset + 1
+                widest = max(widest, offset + 1)
+                result[movement] = CGPoint(x: CGFloat(columnCursor + offset), y: CGFloat(row))
+            }
+            columnCursor += widest
+        }
+        return result
+    }()
+
+    private static let gridWidth: CGFloat = {
+        (layout.values.map(\.x).max() ?? 0) + 1
+    }()
+
+    private static var canvasSize: CGSize {
+        CGSize(
+            width: gridWidth * columnWidth + sideInset * 2,
+            height: 10 * rowHeight + topInset * 2
+        )
     }
 
+    private static func position(_ movement: Movement) -> CGPoint {
+        let grid = layout[movement] ?? .zero
+        return CGPoint(
+            x: sideInset + grid.x * columnWidth + columnWidth / 2,
+            y: topInset + grid.y * rowHeight + rowHeight / 2
+        )
+    }
+
+    // MARK: - Body
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            ScrollView(.horizontal) {
-                HStack(spacing: 8) {
-                    ForEach(MovementCategory.allCases) { option in
-                        FilterChip(
-                            title: option.displayName,
-                            isActive: option == category
-                        ) {
-                            withAnimation(Theme.Motion.selection) {
-                                category = option
-                                appeared = false
-                            }
-                            // Re-run the stagger so switching branch feels
-                            // like the tree growing, not a list swapping.
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                withAnimation(Theme.Motion.expand) { appeared = true }
-                            }
-                        }
-                    }
+        VStack(alignment: .leading, spacing: 12) {
+            ScrollView([.horizontal, .vertical]) {
+                ZStack(alignment: .topLeading) {
+                    tiers
+                    edges
+                    nodes
                 }
+                .frame(width: Self.canvasSize.width, height: Self.canvasSize.height)
             }
             .scrollIndicators(.hidden)
+            .frame(height: 420)
+            .background(Theme.Color.card.opacity(0.35), in: .rect(cornerRadius: Theme.Metric.cardRadius))
 
-            tree
+            detail
         }
         .onAppear {
             withAnimation(Theme.Motion.expand.delay(0.05)) { appeared = true }
         }
     }
 
-    // MARK: - Tree
-
-    private var tree: some View {
-        let nodes = branch.enumerated().map { index, movement in
-            Node(movement: movement, progress: progress(for: movement), row: index)
-        }
-
-        return ZStack(alignment: .top) {
-            Connectors(count: nodes.count, unlockedThrough: unlockedCount(nodes))
-            VStack(spacing: 0) {
-                ForEach(nodes, id: \.movement.id) { node in
-                    NodeRow(node: node, isUnlocked: isUnlocked(node, in: nodes))
-                        .frame(height: Self.rowHeight)
-                        .opacity(appeared ? 1 : 0)
-                        .offset(y: appeared ? 0 : 14)
-                        .animation(
-                            Theme.Motion.expand.delay(Double(node.row) * 0.045),
-                            value: appeared
+    /// Faint bands behind the graph so depth is readable without counting.
+    private var tiers: some View {
+        ForEach(0..<10, id: \.self) { row in
+            let isBanded = (row / 2).isMultiple(of: 2)
+            Rectangle()
+                .fill(isBanded ? Theme.Color.primaryText.opacity(0.022) : .clear)
+                .frame(width: Self.canvasSize.width, height: Self.rowHeight)
+                .position(
+                    x: Self.canvasSize.width / 2,
+                    y: Self.topInset + CGFloat(row) * Self.rowHeight + Self.rowHeight / 2
+                )
+                .overlay(alignment: .topLeading) {
+                    Text("\(row + 1)")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Theme.Color.tertiaryText.opacity(0.7))
+                        .position(
+                            x: 12,
+                            y: Self.topInset + CGFloat(row) * Self.rowHeight + Self.rowHeight / 2
                         )
+                }
+        }
+    }
+
+    private var edges: some View {
+        Canvas { context, _ in
+            for movement in Movement.allCases {
+                let to = Self.position(movement)
+                for parent in movement.prerequisites {
+                    let from = Self.position(parent)
+                    var path = Path()
+                    path.move(to: from)
+                    // Curved so crossing branches stay tellable apart.
+                    path.addCurve(
+                        to: to,
+                        control1: CGPoint(x: from.x, y: from.y + Self.rowHeight * 0.45),
+                        control2: CGPoint(x: to.x, y: to.y - Self.rowHeight * 0.45)
+                    )
+                    let done = isEarned(parent) && isEarned(movement)
+                    context.stroke(
+                        path,
+                        with: .color(done
+                                     ? Theme.Color.valid.opacity(0.55)
+                                     : Theme.Color.divider.opacity(0.75)),
+                        style: StrokeStyle(lineWidth: done ? 2 : 1.5, lineCap: .round)
+                    )
                 }
             }
         }
-        .padding(.vertical, 6)
+        .frame(width: Self.canvasSize.width, height: Self.canvasSize.height)
     }
 
-    static let rowHeight: CGFloat = 78
+    private var nodes: some View {
+        ForEach(Movement.allCases) { movement in
+            let point = Self.position(movement)
+            SkillNode(
+                movement: movement,
+                progress: progress(for: movement),
+                isSelected: selected == movement
+            )
+            .position(x: point.x, y: point.y)
+            .opacity(appeared ? 1 : 0)
+            .scaleEffect(appeared ? 1 : 0.85)
+            .animation(
+                Theme.Motion.expand.delay(Double(movement.difficulty) * 0.03),
+                value: appeared
+            )
+            .onTapGesture {
+                withAnimation(Theme.Motion.selection) {
+                    selected = (selected == movement) ? nil : movement
+                }
+            }
+        }
+    }
+
+    // MARK: - Detail
+
+    /// Tapping a node opens its numbers here rather than pushing a screen —
+    /// the point of a map is staying on it.
+    @ViewBuilder
+    private var detail: some View {
+        if let movement = selected {
+            let mine = sessions.filter { $0.movement == movement }
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    DifficultyPill(level: movement.difficulty)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(movement.displayName)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Theme.Color.primaryText)
+                        Text("\(movement.tier.uppercased()) · \(movement.category.displayName.uppercased())")
+                            .cardLabelStyle()
+                    }
+                    Spacer(minLength: 0)
+                    TrackingBadge(movement: movement)
+                }
+
+                if mine.isEmpty {
+                    Text("Not attempted yet. Nothing stops you starting here.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.Color.secondaryText)
+                } else {
+                    HStack(spacing: 8) {
+                        ForEach(statLines(movement, mine), id: \.0) { line in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(line.1)
+                                    .font(.system(size: 17, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(Theme.Color.primaryText)
+                                Text(line.0).cardLabelStyle()
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
+
+                if !movement.prerequisites.isEmpty {
+                    Text("Usually after: " + movement.prerequisites.map(\.displayName).joined(separator: ", "))
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.Color.tertiaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(Theme.Color.card, in: .rect(cornerRadius: Theme.Metric.cardRadius))
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        } else {
+            Text("Tap any node for its numbers. Nothing is locked — start wherever you already are.")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.Color.tertiaryText)
+        }
+    }
+
+    private func statLines(_ movement: Movement, _ mine: [WorkoutSession]) -> [(String, String)] {
+        if movement.isTimedHold {
+            let holds = mine.flatMap(\.holdSegments)
+            let best = mine.map(\.bestHold).max() ?? 0
+            let average = holds.isEmpty
+                ? 0 : holds.reduce(0) { $0 + $1.duration } / Double(holds.count)
+            return [
+                ("BEST HOLD", SessionResult.durationLabel(best)),
+                ("AVERAGE", average > 0 ? SessionResult.durationLabel(average) : "—"),
+                ("SESSIONS", "\(mine.count)"),
+            ]
+        }
+        return [
+            ("BEST SET", "\(mine.map(\.repCount).max() ?? 0)"),
+            ("TOTAL REPS", "\(mine.reduce(0) { $0 + $1.repCount })"),
+            ("SESSIONS", "\(mine.count)"),
+        ]
+    }
 
     // MARK: - Progress
 
-    struct Node {
-        let movement: Movement
-        /// 0…1 toward this node's criterion, from your best recorded effort.
-        let progress: Double
-        let row: Int
-
-        var isEarned: Bool { progress >= 1 }
-    }
-
     /// Best effort against a provisional target: ten seconds for a hold, ten
-    /// reps for a rep movement.
+    /// reps otherwise.
     private func progress(for movement: Movement) -> Double {
         let mine = sessions.filter { $0.movement == movement }
         guard !mine.isEmpty else { return 0 }
 
         if movement.isTimedHold {
-            let best = mine.map(\.bestHold).max() ?? 0
-            return min(1, best / 10)
+            return min(1, (mine.map(\.bestHold).max() ?? 0) / 10)
         }
-        let best = mine.map(\.repCount).max() ?? 0
-        return min(1, Double(best) / 10)
+        return min(1, Double(mine.map(\.repCount).max() ?? 0) / 10)
     }
 
-    /// A node opens once the one before it is done — the first is always open.
-    private func isUnlocked(_ node: Node, in nodes: [Node]) -> Bool {
-        guard node.row > 0 else { return true }
-        return nodes[node.row - 1].isEarned || node.progress > 0
-    }
-
-    private func unlockedCount(_ nodes: [Node]) -> Int {
-        nodes.filter(\.isEarned).count
-    }
+    private func isEarned(_ movement: Movement) -> Bool { progress(for: movement) >= 1 }
 }
 
-// MARK: - Row
+// MARK: - Node
 
-private struct NodeRow: View {
-    let node: SkillTreeView.Node
-    let isUnlocked: Bool
+private struct SkillNode: View {
+    let movement: Movement
+    let progress: Double
+    let isSelected: Bool
 
-    /// Alternating sides give the branch a shape rather than a straight
-    /// column, which is what makes it read as a tree.
-    private var isLeft: Bool { node.row.isMultiple(of: 2) }
-
-    var body: some View {
-        HStack(spacing: 14) {
-            if !isLeft { Spacer(minLength: 0) }
-
-            if isLeft { badge }
-
-            VStack(alignment: isLeft ? .leading : .trailing, spacing: 2) {
-                Text(node.movement.displayName)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(isUnlocked ? Theme.Color.primaryText : Theme.Color.tertiaryText)
-                    .lineLimit(1)
-                Text(caption)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(node.isEarned ? Theme.Color.valid : Theme.Color.tertiaryText)
-            }
-            .frame(maxWidth: 130, alignment: isLeft ? .leading : .trailing)
-
-            if !isLeft { badge }
-
-            if isLeft { Spacer(minLength: 0) }
-        }
-        .padding(.horizontal, 20)
-    }
-
-    private var caption: String {
-        if node.isEarned { return "EARNED" }
-        if !isUnlocked { return "LOCKED" }
-        if node.progress == 0 { return "NOT STARTED" }
-        return "\(Int(node.progress * 100))% THERE"
-    }
-
-    private var badge: some View {
-        ZStack {
-            Circle()
-                .fill(Theme.Color.card)
-                .frame(width: 52, height: 52)
-
-            // The growing arc: how close your best effort is to the criterion.
-            Circle()
-                .trim(from: 0, to: max(0.001, node.progress))
-                .stroke(
-                    node.isEarned ? Theme.Color.valid : Theme.Color.valid.opacity(0.55),
-                    style: StrokeStyle(lineWidth: 3, lineCap: .round)
-                )
-                .rotationEffect(.degrees(-90))
-                .frame(width: 52, height: 52)
-
-            if node.isEarned {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(Theme.Color.valid)
-            } else if isUnlocked {
-                Text("\(node.movement.difficulty)")
-                    .font(.system(size: 15, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Theme.Color.primaryText)
-            } else {
-                Image(systemName: "lock.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Theme.Color.tertiaryText)
-            }
-        }
-        .opacity(isUnlocked ? 1 : 0.5)
-    }
-}
-
-// MARK: - Connectors
-
-/// The lines between nodes, drawn behind them. Solid where the branch is
-/// complete, dashed where it isn't — so the shape of the tree tells you how
-/// far you've got before you read a single label.
-private struct Connectors: View {
-    let count: Int
-    let unlockedThrough: Int
+    private var isEarned: Bool { progress >= 1 }
+    private var isStarted: Bool { progress > 0 }
 
     var body: some View {
-        GeometryReader { proxy in
-            let width = proxy.size.width
-            let h = SkillTreeView.rowHeight
-            let inset: CGFloat = 46          // centre of a 52pt badge at 20pt padding
-
+        VStack(spacing: 5) {
             ZStack {
-                ForEach(0..<max(0, count - 1), id: \.self) { row in
-                    let fromLeft = row.isMultiple(of: 2)
-                    let start = CGPoint(
-                        x: fromLeft ? inset : width - inset,
-                        y: h * (CGFloat(row) + 0.5) + 6
-                    )
-                    let end = CGPoint(
-                        x: fromLeft ? width - inset : inset,
-                        y: h * (CGFloat(row) + 1.5) + 6
-                    )
+                Circle()
+                    .fill(Theme.Color.card)
+                    .frame(width: 54, height: 54)
 
-                    Path { path in
-                        path.move(to: start)
-                        // A gentle curve rather than a straight diagonal:
-                        // branches bend.
-                        path.addCurve(
-                            to: end,
-                            control1: CGPoint(x: start.x, y: start.y + h * 0.55),
-                            control2: CGPoint(x: end.x, y: end.y - h * 0.55)
+                Circle()
+                    .stroke(Theme.Color.divider.opacity(0.5), lineWidth: 2.5)
+                    .frame(width: 54, height: 54)
+
+                // The ring: how close your best effort is to the target.
+                if isStarted {
+                    Circle()
+                        .trim(from: 0, to: progress)
+                        .stroke(
+                            Theme.Color.valid.opacity(isEarned ? 1 : 0.7),
+                            style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
                         )
-                    }
-                    .stroke(
-                        row < unlockedThrough
-                            ? Theme.Color.valid.opacity(0.5)
-                            : Theme.Color.divider,
-                        style: StrokeStyle(
-                            lineWidth: 2,
-                            lineCap: .round,
-                            dash: row < unlockedThrough ? [] : [3, 5]
-                        )
-                    )
+                        .rotationEffect(.degrees(-90))
+                        .frame(width: 54, height: 54)
+                }
+
+                if isEarned {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(Theme.Color.valid)
+                } else {
+                    Text("\(movement.difficulty)")
+                        .font(.system(size: 15, weight: .bold, design: .monospaced))
+                        .foregroundStyle(isStarted ? Theme.Color.primaryText : Theme.Color.secondaryText)
                 }
             }
+            .overlay {
+                if isSelected {
+                    Circle()
+                        .strokeBorder(Theme.Color.primaryText, lineWidth: 2)
+                        .frame(width: 64, height: 64)
+                }
+            }
+
+            Text(movement.displayName)
+                .font(.system(size: 9.5, weight: .semibold))
+                .foregroundStyle(isStarted ? Theme.Color.primaryText : Theme.Color.tertiaryText)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .frame(width: 96)
         }
+        .contentShape(.rect)
     }
 }
 
