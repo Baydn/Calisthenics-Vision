@@ -48,6 +48,9 @@ struct TrainIdleView: View {
     @State private var showLibrary = false
     @State private var showPaywall = false
     @State private var showMovementSettings = false
+    @State private var timerExpanded = false
+    @Namespace private var lensPill
+    @Namespace private var timerPill
     /// Record for the selected movement when the set began. Captured at the
     /// start so beating it doesn't move the target mid-set.
     @State private var recordToBeat: Double = 0
@@ -264,6 +267,7 @@ struct TrainIdleView: View {
 
     private func startCountdown() {
         guard phase == .idle else { return }
+        withAnimation(Theme.Motion.expand) { timerExpanded = false }
         countdownTask?.cancel()
         let seconds = settings.countdownSeconds
         guard seconds > 0 else { beginRecording(); return }
@@ -710,39 +714,45 @@ struct TrainIdleView: View {
         }
     }
 
-    /// Zoom, shown as the options this camera actually has rather than as a
-    /// toggle. The front camera has only 1×, so a toggle there had nothing to
-    /// switch to and simply read as "1×" with no way to reach 0.5× — the
-    /// ultra-wide lives on the back camera, and you have to flip to use it.
+    /// Zoom, shown as the options this camera actually has.
+    ///
+    /// Hidden entirely on the front camera: it has one lens, and a control
+    /// with a single choice is decoration. The ultra-wide lives on the back
+    /// camera, so flipping is how you reach 0.5×.
     @ViewBuilder
     private var lensButton: some View {
-        if case .running = camera.status {
-            let options = camera.availableLenses
+        if case .running = camera.status, camera.availableLenses.count > 1 {
             HStack(spacing: 2) {
-                ForEach(options, id: \.self) { option in
+                ForEach(camera.availableLenses, id: \.self) { option in
                     let isActive = option == camera.lens
                     Button {
                         guard option != camera.lens else { return }
+                        // Not wrapped in withAnimation: the change lands after
+                        // an await, so the container's `.animation(value:)`
+                        // below is what actually drives the slide.
                         Task { await camera.setLens(option) }
                     } label: {
                         Text(option.label)
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(isActive
                                              ? Theme.Color.background : Theme.Color.primaryText)
-                            .frame(width: 40, height: 34)
-                            .background(
-                                isActive
-                                    ? AnyShapeStyle(Theme.Color.primaryText)
-                                    : AnyShapeStyle(.clear),
-                                in: .capsule
-                            )
+                            .frame(width: 42, height: 34)
+                            .background {
+                                // The selection slides between options rather
+                                // than fading in place.
+                                if isActive {
+                                    Capsule()
+                                        .fill(Theme.Color.primaryText)
+                                        .matchedGeometryEffect(id: "lensPill", in: lensPill)
+                                }
+                            }
                     }
                     .buttonStyle(.plain)
                 }
             }
             .padding(3)
             .background(Theme.Color.card.opacity(0.8), in: .capsule)
-            .animation(.snappy(duration: 0.2), value: camera.lens)
+            .animation(Theme.Motion.selection, value: camera.lens)
         }
     }
 
@@ -775,36 +785,67 @@ struct TrainIdleView: View {
         .buttonStyle(.plain)
     }
 
-    /// Countdown length, cycled in place the way a camera app does it —
-    /// it's decided by how far you have to walk after tapping record, which
-    /// changes every time you set the phone down.
+    /// Countdown length. Tapping opens the choices rather than cycling
+    /// through them — with four values, cycling means up to three taps and a
+    /// wrong guess to land on the one you wanted.
     private var timerButton: some View {
-        Button {
-            let options = [0, 3, 5, 10]
-            let next = (options.firstIndex(of: settings.countdownSeconds) ?? 1) + 1
-            settings.countdownSeconds = options[next % options.count]
-        } label: {
-            ZStack {
-                Image(systemName: settings.countdownSeconds == 0
-                      ? "timer.circle" : "timer")
-                    .font(.system(size: 14, weight: .semibold))
-                    .opacity(settings.countdownSeconds == 0 ? 1 : 0)
-                Text("\(settings.countdownSeconds)s")
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-                    .opacity(settings.countdownSeconds == 0 ? 0 : 1)
+        HStack(spacing: 2) {
+            if timerExpanded {
+                ForEach(Self.countdownOptions, id: \.self) { option in
+                    let isActive = option == settings.countdownSeconds
+                    Button {
+                        withAnimation(Theme.Motion.expand) {
+                            settings.countdownSeconds = option
+                            timerExpanded = false
+                        }
+                    } label: {
+                        Text(option == 0 ? "Off" : "\(option)s")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(isActive
+                                             ? Theme.Color.background : Theme.Color.primaryText)
+                            .frame(width: 38, height: 30)
+                            .background {
+                                if isActive {
+                                    Capsule()
+                                        .fill(Theme.Color.primaryText)
+                                        .matchedGeometryEffect(id: "timerPill", in: timerPill)
+                                }
+                            }
+                    }
+                    .buttonStyle(.plain)
+                }
+            } else {
+                Button {
+                    withAnimation(Theme.Motion.expand) { timerExpanded = true }
+                } label: {
+                    Group {
+                        if settings.countdownSeconds == 0 {
+                            Image(systemName: "timer")
+                                .font(.system(size: 14, weight: .semibold))
+                        } else {
+                            Text("\(settings.countdownSeconds)s")
+                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        }
+                    }
+                    .foregroundStyle(settings.countdownSeconds == 0
+                                     ? Theme.Color.primaryText : Theme.Color.background)
+                    .frame(width: 30, height: 30)
+                    .background {
+                        if settings.countdownSeconds != 0 {
+                            Capsule()
+                                .fill(Theme.Color.primaryText)
+                                .matchedGeometryEffect(id: "timerPill", in: timerPill)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
             }
-            .foregroundStyle(settings.countdownSeconds == 0
-                             ? Theme.Color.primaryText : Theme.Color.background)
-            .frame(width: 36, height: 36)
-            .background(
-                settings.countdownSeconds == 0
-                    ? AnyShapeStyle(Theme.Color.card.opacity(0.8))
-                    : AnyShapeStyle(Theme.Color.primaryText),
-                in: .circle
-            )
         }
-        .buttonStyle(.plain)
+        .padding(3)
+        .background(Theme.Color.card.opacity(0.8), in: .capsule)
     }
+
+    private static let countdownOptions = [0, 3, 5, 10]
 
     /// Per-movement tuning. Currently coaching detail and push-up depth;
     /// this is where movement-specific settings accumulate.

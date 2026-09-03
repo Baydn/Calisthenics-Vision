@@ -58,6 +58,25 @@ enum Theme {
         static func hudCounter() -> SwiftUI.Font { .system(size: 96, weight: .bold, design: .rounded) }
     }
 
+    // MARK: - Motion
+
+    /// Shared animation curves, so movement feels like one app rather than
+    /// like a dozen views each guessing. Reach for these instead of writing
+    /// `.snappy(duration:)` inline — anything that changes position or
+    /// selection should slide, never pop.
+    enum Motion {
+        /// Selection sliding between positions — tab bar, zoom pill, chips.
+        static var selection: Animation {
+            .spring(response: 0.32, dampingFraction: 0.78)
+        }
+        /// A control expanding or collapsing in place.
+        static var expand: Animation {
+            .spring(response: 0.34, dampingFraction: 0.82)
+        }
+        /// Content appearing or changing value.
+        static var content: Animation { .snappy(duration: 0.22) }
+    }
+
     // MARK: - Metrics
 
     enum Metric {

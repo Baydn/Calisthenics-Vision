@@ -100,7 +100,7 @@ struct AppTabBar: View {
                 }
                 .contentShape(.rect)
                 .onTapGesture {
-                    withAnimation(.snappy(duration: 0.28)) { selection = tab }
+                    withAnimation(Theme.Motion.selection) { selection = tab }
                 }
             }
         }
