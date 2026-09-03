@@ -65,6 +65,13 @@ final class CameraController {
     /// generally don't have one.
     private(set) var hasUltraWide = false
 
+    /// The zoom options this camera actually offers, widest first. The front
+    /// camera has one; the back usually has two. Exposed so the HUD can show
+    /// the real choices rather than a toggle that may have nothing to toggle.
+    var availableLenses: [Lens] {
+        hasUltraWide ? [.ultraWide, .wide] : [.wide]
+    }
+
     /// Receives every frame on the capture queue, with the frame's
     /// presentation timestamp in milliseconds.
     func setFrameHandler(_ handler: (@Sendable (CMSampleBuffer, Int) -> Void)?) {
@@ -166,10 +173,15 @@ final class CameraController {
         guard let device = Self.device(at: target, lens: targetLens) else { return }
 
         let rotationAngle = rotationAngle
-        let succeeded = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+        // The continuation hands back the input it actually added. Building a
+        // second one out here looked equivalent and wasn't: `videoInput` then
+        // pointed at an object the session had never seen, so the *next*
+        // switch tried to remove an input that wasn't there and silently did
+        // nothing — which is why changing lens or camera worked once.
+        let added = await withCheckedContinuation { (continuation: CheckedContinuation<AVCaptureDeviceInput?, Never>) in
             sessionQueue.async { [session, output, videoInput] in
                 guard let newInput = try? AVCaptureDeviceInput(device: device) else {
-                    continuation.resume(returning: false)
+                    continuation.resume(returning: nil)
                     return
                 }
 
@@ -182,7 +194,7 @@ final class CameraController {
                         session.addInput(videoInput)
                     }
                     session.commitConfiguration()
-                    continuation.resume(returning: false)
+                    continuation.resume(returning: nil)
                     return
                 }
 
@@ -194,12 +206,12 @@ final class CameraController {
                 )
                 session.commitConfiguration()
 
-                continuation.resume(returning: true)
+                continuation.resume(returning: newInput)
             }
         }
 
-        guard succeeded, let newInput = try? AVCaptureDeviceInput(device: device) else { return }
-        videoInput = newInput
+        guard let added else { return }
+        videoInput = added
         position = target
         lens = targetLens
         hasUltraWide = Self.device(at: target, lens: .ultraWide) != nil

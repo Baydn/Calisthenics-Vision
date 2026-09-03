@@ -139,6 +139,8 @@ struct TrainIdleView: View {
 
             // Coaching and tuning are side features and live on the edge,
             // out of the way of the shutter.
+            // Held clear of the flip button below it — at the vertical centre
+            // these collided on shorter screens.
             HStack {
                 Spacer()
                 VStack(spacing: 12) {
@@ -148,6 +150,8 @@ struct TrainIdleView: View {
                 }
                 .padding(.trailing, 18)
             }
+            .frame(maxHeight: .infinity, alignment: .center)
+            .padding(.bottom, Theme.Metric.tabBarClearance + 120)
 
             // Flip lines up with the tab bar rather than floating over the
             // preview: it's a mode switch, not part of taking the shot.
@@ -697,35 +701,48 @@ struct TrainIdleView: View {
                 Task { await camera.flipCamera() }
             } label: {
                 Image(systemName: "arrow.trianglehead.2.clockwise.rotate.90.camera")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(Theme.Color.primaryText)
-                    .frame(width: 36, height: 36)
-                    .background(Theme.Color.card.opacity(0.8), in: .circle)
+                    .frame(width: 48, height: 48)
+                    .background(Theme.Color.card.opacity(0.85), in: .circle)
             }
             .buttonStyle(.plain)
         }
     }
 
-    /// 1× / 0.5× toggle, shown only when the hardware has an ultra-wide.
+    /// Zoom, shown as the options this camera actually has rather than as a
+    /// toggle. The front camera has only 1×, so a toggle there had nothing to
+    /// switch to and simply read as "1×" with no way to reach 0.5× — the
+    /// ultra-wide lives on the back camera, and you have to flip to use it.
     @ViewBuilder
     private var lensButton: some View {
-        if case .running = camera.status, camera.hasUltraWide {
-            Button {
-                Task { await camera.setLens(camera.lens == .wide ? .ultraWide : .wide) }
-            } label: {
-                Text(camera.lens.label)
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(camera.lens == .ultraWide
-                                     ? Theme.Color.background : Theme.Color.primaryText)
-                    .frame(width: 36, height: 36)
-                    .background(
-                        camera.lens == .ultraWide
-                            ? AnyShapeStyle(Theme.Color.primaryText)
-                            : AnyShapeStyle(Theme.Color.card.opacity(0.8)),
-                        in: .circle
-                    )
+        if case .running = camera.status {
+            let options = camera.availableLenses
+            HStack(spacing: 2) {
+                ForEach(options, id: \.self) { option in
+                    let isActive = option == camera.lens
+                    Button {
+                        guard option != camera.lens else { return }
+                        Task { await camera.setLens(option) }
+                    } label: {
+                        Text(option.label)
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(isActive
+                                             ? Theme.Color.background : Theme.Color.primaryText)
+                            .frame(width: 40, height: 34)
+                            .background(
+                                isActive
+                                    ? AnyShapeStyle(Theme.Color.primaryText)
+                                    : AnyShapeStyle(.clear),
+                                in: .capsule
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            .buttonStyle(.plain)
+            .padding(3)
+            .background(Theme.Color.card.opacity(0.8), in: .capsule)
+            .animation(.snappy(duration: 0.2), value: camera.lens)
         }
     }
 
