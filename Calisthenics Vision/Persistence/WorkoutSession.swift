@@ -55,6 +55,9 @@ final class WorkoutSession {
     var holdStartsMs: [Int] = []
     /// Line quality per hold, 0…1, or -1 where it couldn't be measured.
     var holdQualities: [Double] = []
+    /// Times you went up in this session, landed or not. The holds above are
+    /// the ones that stuck; the difference is what you fell out of.
+    var kickUpAttempts: Int = 0
 
     init(
         id: UUID = UUID(),
@@ -71,7 +74,8 @@ final class WorkoutSession {
         formQuality: Double? = nil,
         holdDurationsSec: [Double] = [],
         holdStartsMs: [Int] = [],
-        holdQualities: [Double] = []
+        holdQualities: [Double] = [],
+        kickUpAttempts: Int = 0
     ) {
         self.id = id
         self.movement = movement
@@ -88,6 +92,7 @@ final class WorkoutSession {
         self.holdDurationsSec = holdDurationsSec
         self.holdStartsMs = holdStartsMs
         self.holdQualities = holdQualities
+        self.kickUpAttempts = kickUpAttempts
     }
 }
 
@@ -115,6 +120,11 @@ extension WorkoutSession {
 
     /// Longest single hold — what a hold set is judged on.
     var bestHold: TimeInterval { holdDurationsSec.max() ?? duration }
+
+    /// Kick-ups that turned into a hold worth the name.
+    var landedKickUps: Int {
+        holdDurationsSec.filter { $0 >= HoldSegment.kickUpSuccessSeconds }.count
+    }
 
     var result: SessionResult {
         guard movement.isTimedHold else { return .reps(repCount) }

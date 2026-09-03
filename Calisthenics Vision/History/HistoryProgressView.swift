@@ -2,8 +2,14 @@
 //  HistoryProgressView.swift
 //  Calisthenics Vision
 //
-//  Personal records stay free; the long-term progression chart is gated
-//  behind Pro (SPEC.md §4 — "long-term progression graphs").
+//  Progress for one movement over a chosen window. Personal records stay
+//  free; the long-term progression chart is gated behind Pro (SPEC.md §4 —
+//  "long-term progression graphs").
+//
+//  Holds and reps are different questions, so the metrics change with the
+//  movement rather than showing a column of dashes: a handstand's progress is
+//  its longest hold, how straight it was, its average attempt, and how often
+//  the kick-up stuck.
 //
 
 import SwiftUI
@@ -16,34 +22,82 @@ struct TrendPoint: Identifiable {
     let isToday: Bool
 }
 
+/// How far back Progress looks.
+enum ProgressRange: String, CaseIterable, Hashable {
+    case month = "M"
+    case halfYear = "6M"
+    case year = "Y"
+    case all = "All"
+
+    /// Days of history, or nil for everything.
+    var days: Int? {
+        switch self {
+        case .month:    30
+        case .halfYear: 182
+        case .year:     365
+        case .all:      nil
+        }
+    }
+
+    /// How the trend groups: daily for a month, weekly up to a year, monthly
+    /// beyond. Ten daily bars over a year would say nothing.
+    var bucket: Calendar.Component {
+        switch self {
+        case .month:              .day
+        case .halfYear, .year:    .weekOfYear
+        case .all:                .month
+        }
+    }
+
+    var bucketLabel: String {
+        switch self {
+        case .month:            "DAILY"
+        case .halfYear, .year:  "WEEKLY"
+        case .all:              "MONTHLY"
+        }
+    }
+}
+
 struct HistoryProgressView: View {
     let sessions: [WorkoutSession]
     let stats: SessionStats
 
     @Environment(Entitlements.self) private var entitlements
-    @State private var filter: Movement?          // nil == "All"
+    @State private var filter: Movement = .pushUps
+    @State private var range: ProgressRange = .month
     @State private var showPaywall = false
 
-    private let filterOptions: [Movement?] = [nil, .pushUps, .handstand]
+    private let filterOptions: [Movement] = [.pushUps, .handstand]
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 filterRow
-                    .padding(.bottom, 26)
+                    .padding(.bottom, 12)
 
-                Text("PERSONAL RECORDS")
-                    .sectionHeaderStyle()
-                    .padding(.bottom, 10)
+                SegmentedControl(
+                    segments: ProgressRange.allCases,
+                    title: \.rawValue,
+                    selection: $range
+                )
+                .padding(.bottom, 26)
 
-                personalRecords
-                    .padding(.bottom, 26)
+                if relevant.isEmpty {
+                    emptyState
+                } else {
+                    Text("PERSONAL RECORDS")
+                        .sectionHeaderStyle()
+                        .padding(.bottom, 10)
 
-                Text(trendTitle)
-                    .sectionHeaderStyle()
-                    .padding(.bottom, 10)
+                    records
+                        .padding(.bottom, 26)
 
-                progressionTrend
+                    Text(trendTitle)
+                        .sectionHeaderStyle()
+                        .padding(.bottom, 10)
+
+                    progressionTrend
+                }
             }
             .padding(.horizontal, Theme.Metric.screenPadding)
             .padding(.bottom, 24)
@@ -54,54 +108,95 @@ struct HistoryProgressView: View {
 
     // MARK: - Data
 
-    /// Daily totals for the selected movement, most recent last.
+    private var measuresHold: Bool { filter.isTimedHold }
+
+    /// Sessions for the selected movement inside the selected window.
+    private var relevant: [WorkoutSession] {
+        let cutoff = range.days.flatMap {
+            Calendar.current.date(byAdding: .day, value: -$0, to: .now)
+        }
+        return sessions.filter { session in
+            session.movement == filter
+                && (cutoff.map { session.startedAt >= $0 } ?? true)
+        }
+    }
+
+    /// Every individual hold in the window — the unit holds are judged in.
+    private var holds: [HoldSegment] { relevant.flatMap(\.holdSegments) }
+
+    private var longestHold: TimeInterval { relevant.map(\.bestHold).max() ?? 0 }
+
+    /// Mean of every attempt, which is a fairer read of where you are than
+    /// the best one — the best hold is a ceiling, the average is the floor
+    /// you can rely on.
+    private var averageHold: TimeInterval? {
+        guard !holds.isEmpty else { return nil }
+        return holds.reduce(0) { $0 + $1.duration } / Double(holds.count)
+    }
+
+    /// Straightness across the window, time-weighted so a long scrappy hold
+    /// counts more than a two-second clean one.
+    private var averageLine: Double? {
+        let scored = holds.filter { $0.quality != nil }
+        guard !scored.isEmpty else {
+            return relevant.compactMap(\.formQuality).averageOrNil
+        }
+        let weight = scored.reduce(0) { $0 + $1.duration }
+        guard weight > 0 else { return nil }
+        return scored.reduce(0) { $0 + ($1.quality ?? 0) * $1.duration } / weight
+    }
+
+    private var kickUpAttempts: Int { relevant.reduce(0) { $0 + $1.kickUpAttempts } }
+    private var kickUpsLanded: Int { relevant.reduce(0) { $0 + $1.landedKickUps } }
+
+    /// Share of kick-ups that turned into a hold. Nil where no session has
+    /// recorded attempts — sessions from before this was tracked would
+    /// otherwise read as 0%, which is worse than saying nothing.
+    private var kickUpRate: Double? {
+        guard kickUpAttempts > 0 else { return nil }
+        return Double(kickUpsLanded) / Double(kickUpAttempts)
+    }
+
+    /// Trend buckets, most recent last.
     ///
-    /// Reps sum across a day; holds take the day's best, since two short
+    /// Reps sum within a bucket; holds take the best, since two short
     /// handstands aren't the same achievement as one long one.
     private var trend: [TrendPoint] {
         let calendar = Calendar.current
-        let relevant = sessions.filter { filter == nil || $0.movement == filter }
         guard !relevant.isEmpty else { return [] }
 
-        let byDay = Dictionary(grouping: relevant) {
-            calendar.startOfDay(for: $0.startedAt)
+        let grouped = Dictionary(grouping: relevant) { session -> Date in
+            calendar.dateInterval(of: range.bucket, for: session.startedAt)?.start
+                ?? calendar.startOfDay(for: session.startedAt)
         }
 
-        return byDay.keys.sorted().suffix(10).map { day in
-            let items = byDay[day] ?? []
-            // Best single hold, not the day's total — the trend is about
-            // whether the hold is getting longer, not how much you did.
+        return grouped.keys.sorted().suffix(10).map { start in
+            let items = grouped[start] ?? []
             let value = measuresHold
                 ? (items.map(\.bestHold).max() ?? 0)
                 : Double(items.reduce(0) { $0 + $1.repCount })
-
             return TrendPoint(
-                label: day.formatted(.dateTime.day()),
+                label: label(for: start, calendar: calendar),
                 value: value,
-                isToday: calendar.isDateInToday(day)
+                isToday: calendar.isDateInToday(start)
             )
         }
     }
 
-    private var measuresHold: Bool { filter?.isTimedHold ?? false }
-
-    private var trendTitle: String {
-        switch filter {
-        case .none:            "PROGRESSION TREND · DAILY REPS"
-        case .some(let m) where m.isTimedHold: "PROGRESSION TREND · BEST HOLD"
-        case .some:            "PROGRESSION TREND · DAILY REPS"
+    private func label(for date: Date, calendar: Calendar) -> String {
+        switch range.bucket {
+        case .month:      date.formatted(.dateTime.month(.narrow))
+        case .weekOfYear: date.formatted(.dateTime.day())
+        default:          date.formatted(.dateTime.day())
         }
     }
 
-    // MARK: - Pieces
+    // MARK: - Controls
 
     private var filterRow: some View {
         HStack(spacing: 8) {
             ForEach(filterOptions, id: \.self) { option in
-                FilterChip(
-                    title: option?.displayName ?? "All",
-                    isActive: option == filter
-                ) {
+                FilterChip(title: option.displayName, isActive: option == filter) {
                     withAnimation(.snappy(duration: 0.2)) { filter = option }
                 }
             }
@@ -109,19 +204,70 @@ struct HistoryProgressView: View {
         }
     }
 
-    private var personalRecords: some View {
-        HStack(spacing: 12) {
-            RecordCard(
-                value: stats.bestPushUpSet > 0 ? "\(stats.bestPushUpSet)" : "—",
-                label: "BEST PUSH-UP SET"
-            )
-            RecordCard(
-                value: stats.longestHold > 0
-                    ? SessionResult.durationLabel(stats.longestHold)
-                    : "—",
-                label: "LONGEST HANDSTAND"
-            )
+    private var trendTitle: String {
+        measuresHold
+            ? "PROGRESSION TREND · \(range.bucketLabel) BEST HOLD"
+            : "PROGRESSION TREND · \(range.bucketLabel) REPS"
+    }
+
+    // MARK: - Records
+
+    @ViewBuilder
+    private var records: some View {
+        if measuresHold {
+            VStack(spacing: 12) {
+                HStack(spacing: 12) {
+                    RecordCard(
+                        value: longestHold > 0
+                            ? SessionResult.durationLabel(longestHold) : "—",
+                        label: "LONGEST HOLD"
+                    )
+                    RecordCard(
+                        value: averageHold.map { SessionResult.durationLabel($0) } ?? "—",
+                        label: "AVERAGE HOLD"
+                    )
+                }
+                HStack(spacing: 12) {
+                    RecordCard(
+                        value: averageLine.map { "\(Int(($0 * 100).rounded()))%" } ?? "—",
+                        label: "STRAIGHTNESS"
+                    )
+                    RecordCard(
+                        value: kickUpRate.map { "\(Int(($0 * 100).rounded()))%" } ?? "—",
+                        label: kickUpAttempts > 0
+                            ? "KICK-UP · \(kickUpsLanded)/\(kickUpAttempts)"
+                            : "KICK-UP SUCCESS"
+                    )
+                }
+            }
+        } else {
+            HStack(spacing: 12) {
+                RecordCard(
+                    value: bestSet > 0 ? "\(bestSet)" : "—",
+                    label: "BEST SET"
+                )
+                RecordCard(
+                    value: totalReps > 0 ? "\(totalReps)" : "—",
+                    label: "TOTAL REPS"
+                )
+            }
         }
+    }
+
+    private var bestSet: Int { relevant.map(\.repCount).max() ?? 0 }
+    private var totalReps: Int { relevant.reduce(0) { $0 + $1.repCount } }
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Nothing logged in this window")
+                .font(Theme.Font.title())
+                .foregroundStyle(Theme.Color.primaryText)
+            Text("Record a \(filter.displayName.lowercased()) session, or widen the range.")
+                .font(Theme.Font.body())
+                .foregroundStyle(Theme.Color.secondaryText)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 40)
     }
 
     private var progressionTrend: some View {
@@ -140,59 +286,33 @@ struct HistoryProgressView: View {
                 RoundedRectangle(cornerRadius: Theme.Metric.cardRadius)
                     .fill(Theme.Color.background.opacity(0.55))
 
-                VStack(spacing: 14) {
-                    Circle()
-                        .fill(Theme.Color.elevated)
-                        .frame(width: 36, height: 36)
-                        .overlay {
-                            Image(systemName: "lock.fill")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(Theme.Color.primaryText)
-                        }
-
-                    Text("See your full progress with Pro")
-                        .font(Theme.Font.control())
+                VStack(spacing: 12) {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(Theme.Color.primaryText)
+                    Text("Long-term progression is a Pro feature")
+                        .font(Theme.Font.body())
                         .foregroundStyle(Theme.Color.secondaryText)
-
-                    Button { showPaywall = true } label: {
-                        Text("Upgrade to Pro")
-                            .font(Theme.Font.controlActive())
-                            .foregroundStyle(Theme.Color.background)
-                            .padding(.horizontal, 22)
-                            .frame(height: 34)
-                            .background(Theme.Color.primaryText, in: .capsule)
-                    }
-                    .buttonStyle(.plain)
+                        .multilineTextAlignment(.center)
+                    Button("Upgrade to Pro") { showPaywall = true }
+                        .font(Theme.Font.controlActive())
+                        .foregroundStyle(Theme.Color.background)
+                        .padding(.horizontal, 18)
+                        .frame(height: 34)
+                        .background(Theme.Color.primaryText, in: .capsule)
+                        .buttonStyle(.plain)
                 }
+                .padding(20)
             }
         }
-        .frame(height: 190)
     }
 }
 
-// MARK: - Record card
-
-private struct RecordCard: View {
-    let value: String
-    let label: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(value)
-                .font(Theme.Font.cardNumber())
-                .foregroundStyle(Theme.Color.primaryText)
-            Spacer(minLength: 0)
-            Text(label)
-                .cardLabelStyle()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .frame(height: 90)
-        .background(Theme.Color.card, in: .rect(cornerRadius: Theme.Metric.cardRadius))
+private extension Array where Element == Double {
+    var averageOrNil: Double? {
+        isEmpty ? nil : reduce(0, +) / Double(count)
     }
 }
-
-// MARK: - Trend chart
 
 private struct TrendChart: View {
     let points: [TrendPoint]
@@ -263,6 +383,28 @@ private struct TrendChart: View {
     }
 }
 
+private struct RecordCard: View {
+    let value: String
+    let label: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(value)
+                .font(Theme.Font.cardNumber())
+                .foregroundStyle(Theme.Color.primaryText)
+            Spacer(minLength: 0)
+            Text(label)
+                .cardLabelStyle()
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .frame(height: 90)
+        .background(Theme.Color.card, in: .rect(cornerRadius: Theme.Metric.cardRadius))
+    }
+}
+
 #Preview {
     ZStack {
         Theme.Color.background.ignoresSafeArea()
@@ -270,7 +412,7 @@ private struct TrendChart: View {
             sessions: SampleSessions.make(),
             stats: SessionStore.stats(for: SampleSessions.make())
         )
+        .environment(Entitlements())
     }
-    .environment(Entitlements())
     .preferredColorScheme(.dark)
 }

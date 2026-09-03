@@ -73,6 +73,9 @@ enum Theme {
         /// deliberately run underneath the glass (the camera preview) ignore
         /// this for their background and use it only for controls.
         static let tabBarClearance: CGFloat = 76
+        /// Bottom inset that puts a 36pt control on the tab bar's centre line,
+        /// so controls parked beside the bar line up with it.
+        static let tabBarInset: CGFloat = 17
         static let labelTracking: CGFloat = 0.5
     }
 }

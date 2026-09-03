@@ -35,7 +35,17 @@ struct HistoryView: View {
                 if verticalSizeClass != .compact {
                     HStack(spacing: 8) {
                         StatCard(value: "\(stats.dayStreak)", label: "DAY STREAK")
-                        StatCard(value: "\(stats.repsThisWeek)", label: "REPS THIS WK")
+                        // Falls back to hold time when the week has no reps
+                        // in it: a week of nothing but handstands used to
+                        // show a headline zero.
+                        if stats.repsThisWeek == 0 && stats.holdTimeThisWeek > 0 {
+                            StatCard(
+                                value: SessionResult.durationLabel(stats.holdTimeThisWeek),
+                                label: "HELD THIS WK"
+                            )
+                        } else {
+                            StatCard(value: "\(stats.repsThisWeek)", label: "REPS THIS WK")
+                        }
                         StatCard(value: "\(stats.totalSessions)", label: "SESSIONS")
                     }
                 }

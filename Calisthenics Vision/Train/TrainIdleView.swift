@@ -104,18 +104,35 @@ struct TrainIdleView: View {
     }
 
     private var portraitControls: some View {
-        VStack(spacing: 0) {
-            topBar
-                .padding(.top, 8)
+        ZStack(alignment: .bottom) {
+            VStack(spacing: 0) {
+                topBar
+                    .padding(.top, 8)
 
-            Spacer()
+                Spacer()
 
-            centrepiece
+                centrepiece
 
-            Spacer()
+                Spacer()
 
-            recordButton
+                // Zoom sits directly above the shutter, where a camera app
+                // puts it — it belongs to the shot you're about to take, not
+                // to the chrome at the top of the screen.
+                VStack(spacing: 14) {
+                    lensButton
+                    recordButton
+                }
                 .padding(.bottom, Theme.Metric.tabBarClearance + 8)
+            }
+
+            // Flip lines up with the tab bar rather than floating over the
+            // preview: it's a mode switch, not part of taking the shot.
+            HStack {
+                Spacer()
+                flipCameraButton
+            }
+            .padding(.trailing, 18)
+            .padding(.bottom, Theme.Metric.tabBarInset)
         }
     }
 
@@ -140,13 +157,20 @@ struct TrainIdleView: View {
             HStack {
                 Spacer()
                 VStack(spacing: 12) {
-                    flipCameraButton
                     lensButton
                     recordButton
                         .scaleEffect(0.78)
                 }
                 .padding(.trailing, 18)
             }
+
+            HStack {
+                Spacer()
+                flipCameraButton
+            }
+            .frame(maxHeight: .infinity, alignment: .bottom)
+            .padding(.trailing, 18)
+            .padding(.bottom, Theme.Metric.tabBarInset)
         }
     }
 
@@ -254,6 +278,7 @@ struct TrainIdleView: View {
         // not how long the recording ran.
         let holdSeconds = tracker?.progress.holdDuration ?? 0
         let holds = tracker?.progress.holds ?? []
+        let attempts = tracker?.progress.kickUpAttempts ?? 0
         let quality = tracker?.progress.formQuality
         let telemetryName = telemetry?.fileName
         let repMarks = repTimestamps
@@ -281,7 +306,8 @@ struct TrainIdleView: View {
                 holdStartsMs: holds.map(\.startTimestampMs),
                 // -1 stands in for "not measurable", since the stored array
                 // has to be plain doubles.
-                holdQualities: holds.map { $0.quality ?? -1 }
+                holdQualities: holds.map { $0.quality ?? -1 },
+                kickUpAttempts: attempts
             )
             modelContext.insert(session)
             try? modelContext.save()
@@ -346,11 +372,7 @@ struct TrainIdleView: View {
 
             HStack(alignment: .top) {
                 performanceReadout
-                Spacer()
-                VStack(spacing: 8) {
-                    flipCameraButton
-                    lensButton
-                }
+                Spacer(minLength: 0)
             }
             .padding(.horizontal, 16)
         }

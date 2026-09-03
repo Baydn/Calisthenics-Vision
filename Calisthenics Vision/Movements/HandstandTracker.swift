@@ -76,8 +76,9 @@ struct HandstandTracker: MovementTracker {
         d.secondaryAngle = hipAngle
         if isInverted {
             d.note = String(
-                format: "hold %d · line %.0f%%",
-                progress.holds.count + 1, (progress.formQuality ?? 0) * 100
+                format: "hold %d/%d · line %.0f%%",
+                progress.holds.count + 1, progress.kickUpAttempts,
+                (progress.formQuality ?? 0) * 100
             )
         } else {
             d.note = progress.holds.isEmpty
@@ -170,6 +171,11 @@ struct HandstandTracker: MovementTracker {
     // MARK: - Hold segmentation
 
     private mutating func beginHold(at timestampMs: Int) {
+        // Going up is a kick-up attempt whether or not it turns into a hold.
+        // Counting it here, rather than only when a hold is recorded, is what
+        // makes a success rate meaningful — the failures are the attempts
+        // that never make it past `minimumHoldSeconds`.
+        progress.kickUpAttempts += 1
         holdStartMs = timestampMs
         progress.currentHold = 0
         lastWholeSecond = 0

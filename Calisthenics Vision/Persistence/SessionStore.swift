@@ -16,6 +16,16 @@ struct SessionStats {
 
     var bestPushUpSet = 0
     var longestHold: TimeInterval = 0
+
+    /// Hold time logged in the last 7 days. A handstand-only week used to
+    /// read as a week of zeroes, because every headline number counted reps.
+    var holdTimeThisWeek: TimeInterval = 0
+    /// Line score of the best-scoring single hold, 0…1. Nil when nothing has
+    /// been scored — sessions from before line scoring, or holds too
+    /// unreliable to measure.
+    var bestLine: Double?
+    /// How many individual holds have been logged, across every set.
+    var totalHolds = 0
 }
 
 enum SessionStore {
@@ -48,6 +58,23 @@ enum SessionStore {
             .filter { $0.movement.isTimedHold }
             .map(\.bestHold)
             .max() ?? 0
+
+        let holdSessions = sessions.filter { $0.movement.isTimedHold }
+
+        if let weekAgo = calendar.date(byAdding: .day, value: -7, to: .now) {
+            stats.holdTimeThisWeek = holdSessions
+                .filter { $0.startedAt >= weekAgo }
+                .reduce(0) { $0 + $1.duration }
+        }
+
+        // Scored per hold, not per session: one clean attempt in an otherwise
+        // scrappy set is still your best line, and averaging would hide it.
+        let holds = holdSessions.flatMap(\.holdSegments)
+        stats.totalHolds = holds.count
+        stats.bestLine = holds.compactMap(\.quality).max()
+            // Sessions recorded before holds were segmented only carry a
+            // whole-session score.
+            ?? holdSessions.compactMap(\.formQuality).max()
 
         stats.dayStreak = dayStreak(for: sessions, calendar: calendar)
         return stats

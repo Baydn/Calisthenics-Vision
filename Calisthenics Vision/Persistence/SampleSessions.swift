@@ -27,7 +27,8 @@ enum SampleSessions {
         func holdSet(
             daysAgo: Int, hour: Int, minute: Int,
             holds: [(seconds: Double, line: Double)],
-            formBreaks: Int = 0
+            formBreaks: Int = 0,
+            bailedKickUps: Int = 0
         ) -> WorkoutSession {
             WorkoutSession(
                 movement: .handstand,
@@ -39,17 +40,20 @@ enum SampleSessions {
                 // Spaced out along a notional recording so the review
                 // scrubber has somewhere to put the markers.
                 holdStartsMs: holds.indices.map { $0 * 30_000 },
-                holdQualities: holds.map(\.line)
+                holdQualities: holds.map(\.line),
+                kickUpAttempts: holds.count + bailedKickUps
             )
         }
 
         return [
             WorkoutSession(movement: .pushUps,   startedAt: date(daysAgo: 0, hour: 7, minute: 14), duration: 96,  repCount: 24),
             holdSet(daysAgo: 0, hour: 7, minute: 22,
-                    holds: [(12.4, 0.62), (17.8, 0.81), (8.1, 0.55)], formBreaks: 1),
+                    holds: [(12.4, 0.62), (17.8, 0.81), (8.1, 0.55)],
+                    formBreaks: 1, bailedKickUps: 2),
             WorkoutSession(movement: .pushUps,   startedAt: date(daysAgo: 1, hour: 6, minute: 50), duration: 74,  repCount: 18),
             holdSet(daysAgo: 2, hour: 7, minute: 10,
-                    holds: [(21.5, 0.74), (24.0, 0.88), (16.5, 0.69)]),
+                    holds: [(21.5, 0.74), (24.0, 0.88), (16.5, 0.69)],
+                    bailedKickUps: 1),
             WorkoutSession(movement: .pushUps,   startedAt: date(daysAgo: 3, hour: 8, minute: 3),  duration: 88,  repCount: 21, formBreaks: 2),
             WorkoutSession(movement: .pushUps,   startedAt: date(daysAgo: 5, hour: 7, minute: 30), duration: 82,  repCount: 20),
             WorkoutSession(movement: .handstand, startedAt: date(daysAgo: 6, hour: 7, minute: 45), duration: 51),

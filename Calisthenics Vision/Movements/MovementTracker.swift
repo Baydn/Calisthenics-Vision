@@ -32,6 +32,15 @@ struct HoldSegment: Equatable {
     var startTimestampMs: Int
     /// Mean line quality over this hold alone, 0…1, where measurable.
     var quality: Double?
+
+    /// Shortest hold that counts as landing the kick-up.
+    ///
+    /// A judgement call, deliberately low: getting up and holding two seconds
+    /// is a landed kick-up even if it isn't a good handstand yet. Anything
+    /// shorter is a kick-up you came straight back down from.
+    static let kickUpSuccessSeconds: TimeInterval = 2.0
+
+    var isLandedKickUp: Bool { duration >= Self.kickUpSuccessSeconds }
 }
 
 enum FormIssue: String, Equatable {
@@ -54,6 +63,9 @@ struct MovementProgress: Equatable {
     /// Mean line quality across the whole set, 0…1. Nil where the movement
     /// doesn't score form, or where nothing measurable has happened yet.
     var formQuality: Double?
+    /// Times you went up in this set, landed or not. Every hold below is one
+    /// of these; the rest came straight back down.
+    var kickUpAttempts = 0
 
     /// Total counted hold time across the set, including the one in progress.
     var holdDuration: TimeInterval {
@@ -66,6 +78,9 @@ struct MovementProgress: Equatable {
     var bestHold: TimeInterval {
         max(holds.map(\.duration).max() ?? 0, currentHold)
     }
+
+    /// Kick-ups that turned into a hold worth the name.
+    var landedKickUps: Int { holds.filter(\.isLandedKickUp).count }
 }
 
 /// What the debug readout shows. Generalized across movements so the HUD

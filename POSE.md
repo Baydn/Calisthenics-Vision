@@ -257,6 +257,19 @@ plus the one in progress, so a rejected blip contributes nothing.
 `finish()` closes whatever is still open. Without it, stopping the recording
 while still inverted would silently discard the attempt in progress.
 
+### Kick-up success
+
+Every entry into inversion is an attempt, counted in `beginHold` whether or
+not it turns into anything. The ones that never reach `minimumHoldSeconds`
+are discarded as holds but still counted as attempts — which is exactly what
+makes a success rate meaningful, since the failures *are* the discarded ones.
+A landed kick-up is a hold of at least `HoldSegment.kickUpSuccessSeconds`
+(**2 s**): getting up and holding two seconds is a landed kick-up even if it
+isn't a good handstand yet.
+
+The grace window applies first, so a dropped frame mid-hold cannot inflate
+the attempt count by splitting one kick-up into two.
+
 **The set's headline number is the best single hold, not the total.** Six
 five-second handstands are not a thirty-second handstand, and any personal
 record or trend line that sums them is lying about progress.
@@ -352,7 +365,7 @@ For a segmented hold additionally: several attempts recorded separately, rest
 between them uncounted, a brief dropout not splitting one hold, a sub-second
 blip discarded along with its time, and finishing mid-hold keeping it.
 
-Current coverage: **38 push-up checks, 39 handstand checks**, all passing.
+Current coverage: **38 push-up checks, 46 handstand checks**, all passing.
 
 A fixture that shares a bug with the code proves nothing — the aspect-ratio
 distortion bug passed 14 tests because the fixtures were generated in the
@@ -401,5 +414,6 @@ Change these deliberately; each has a reason above.
 
 **HandstandTracker** — `idealAlignment 180` · `warnDeviation 45` (warn only,
 never a gate) · `minConfidence 0.5` · `framesToFlag 20` · `maxFrameGapMs 500`
-· `holdGapToleranceMs 400` · `minimumHoldSeconds 1.0` · quality taper `90°` → 0
+· `holdGapToleranceMs 400` · `minimumHoldSeconds 1.0` ·
+`HoldSegment.kickUpSuccessSeconds 2.0` · quality taper `90°` → 0
 · inversion separation `0.3 m`
