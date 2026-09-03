@@ -21,6 +21,7 @@ import SwiftData
 final class Workout {
     var id: UUID = UUID()
     var name: String = ""
+    var notes: String = ""
     var createdAt: Date = Date()
     /// Ids of the `WorkoutSession`s in this workout, in the order performed.
     var sessionIDs: [UUID] = []
@@ -28,17 +29,29 @@ final class Workout {
     init(
         id: UUID = UUID(),
         name: String,
+        notes: String = "",
         createdAt: Date = Date(),
         sessionIDs: [UUID] = []
     ) {
         self.id = id
         self.name = name
+        self.notes = notes
         self.createdAt = createdAt
         self.sessionIDs = sessionIDs
     }
 }
 
 extension Workout {
+
+    /// Longest gap allowed between one set and the next in the same workout.
+    ///
+    /// Without it you could group this morning's push-ups with yesterday's,
+    /// which isn't a workout — it's two workouts with a night in between, and
+    /// any total or duration computed across it would be nonsense. Three
+    /// hours is generous enough for a long session with a break in it and
+    /// short enough to rule out grouping across a day.
+    static let maxGapBetweenSets: TimeInterval = 3 * 60 * 60
+
     /// The sets themselves, in performed order. Tolerates a missing set — a
     /// deleted recording shouldn't take the whole workout with it.
     func sessions(from all: [WorkoutSession]) -> [WorkoutSession] {

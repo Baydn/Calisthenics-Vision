@@ -66,6 +66,7 @@ struct HistoryProgressView: View {
     @State private var filter: Movement = .pushUps
     @State private var range: ProgressRange = .month
     @State private var showPaywall = false
+    @State private var detail: RecordDetailView.Metric?
 
     private let filterOptions: [Movement] = [.pushUps, .pullUps, .handstand]
 
@@ -104,6 +105,9 @@ struct HistoryProgressView: View {
         }
         .scrollIndicators(.hidden)
         .sheet(isPresented: $showPaywall) { PaywallView() }
+        .sheet(item: $detail) { metric in
+            RecordDetailView(metric: metric, movement: filter, sessions: relevant)
+        }
     }
 
     // MARK: - Data
@@ -217,41 +221,40 @@ struct HistoryProgressView: View {
         if measuresHold {
             VStack(spacing: 12) {
                 HStack(spacing: 12) {
-                    RecordCard(
-                        value: longestHold > 0
-                            ? SessionResult.durationLabel(longestHold) : "—",
-                        label: "LONGEST HOLD"
-                    )
-                    RecordCard(
-                        value: averageHold.map { SessionResult.durationLabel($0) } ?? "—",
-                        label: "AVERAGE HOLD"
-                    )
+                    tappable(.bestHold, longestHold > 0
+                             ? SessionResult.durationLabel(longestHold) : "—", "LONGEST HOLD")
+                    tappable(.averageHold,
+                             averageHold.map { SessionResult.durationLabel($0) } ?? "—",
+                             "AVERAGE HOLD")
                 }
                 HStack(spacing: 12) {
-                    RecordCard(
-                        value: averageLine.map { "\(Int(($0 * 100).rounded()))%" } ?? "—",
-                        label: "STRAIGHTNESS"
-                    )
-                    RecordCard(
-                        value: kickUpRate.map { "\(Int(($0 * 100).rounded()))%" } ?? "—",
-                        label: kickUpAttempts > 0
-                            ? "KICK-UP · \(kickUpsLanded)/\(kickUpAttempts)"
-                            : "KICK-UP SUCCESS"
-                    )
+                    tappable(.straightness,
+                             averageLine.map { "\(Int(($0 * 100).rounded()))%" } ?? "—",
+                             "STRAIGHTNESS")
+                    tappable(.kickUp,
+                             kickUpRate.map { "\(Int(($0 * 100).rounded()))%" } ?? "—",
+                             kickUpAttempts > 0
+                                ? "KICK-UP · \(kickUpsLanded)/\(kickUpAttempts)"
+                                : "KICK-UP SUCCESS")
                 }
             }
         } else {
             HStack(spacing: 12) {
-                RecordCard(
-                    value: bestSet > 0 ? "\(bestSet)" : "—",
-                    label: "BEST SET"
-                )
-                RecordCard(
-                    value: totalReps > 0 ? "\(totalReps)" : "—",
-                    label: "TOTAL REPS"
-                )
+                tappable(.bestSet, bestSet > 0 ? "\(bestSet)" : "—", "BEST SET")
+                tappable(.totalReps, totalReps > 0 ? "\(totalReps)" : "—", "TOTAL REPS")
             }
         }
+    }
+
+    /// Every record opens its own screen — a number with no context can't
+    /// tell you whether it's recent, climbing, or a fluke.
+    private func tappable(
+        _ metric: RecordDetailView.Metric, _ value: String, _ label: String
+    ) -> some View {
+        Button { detail = metric } label: {
+            RecordCard(value: value, label: label, isTappable: true)
+        }
+        .buttonStyle(.plain)
     }
 
     private var bestSet: Int { relevant.map(\.repCount).max() ?? 0 }
@@ -386,6 +389,7 @@ private struct TrendChart: View {
 private struct RecordCard: View {
     let value: String
     let label: String
+    var isTappable = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -393,10 +397,17 @@ private struct RecordCard: View {
                 .font(Theme.Font.cardNumber())
                 .foregroundStyle(Theme.Color.primaryText)
             Spacer(minLength: 0)
-            Text(label)
-                .cardLabelStyle()
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+            HStack(spacing: 4) {
+                Text(label)
+                    .cardLabelStyle()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                if isTappable {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(Theme.Color.tertiaryText)
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)

@@ -43,6 +43,10 @@ struct PostCard: View {
     @Environment(\.modelContext) private var modelContext
     @State private var showBreakdown = false
     @State private var exampleLiked = false
+    @State private var isFavourite = false
+    @State private var notifyOnPost = false
+    @State private var isFollowing = true
+    @State private var isMuted = false
 
     private var sets: [WorkoutSession] { post?.sessions(from: sessions) ?? [] }
 
@@ -53,6 +57,7 @@ struct PostCard: View {
             if example?.hasClip == true { clip }
             headline
             if sets.count > 1 { breakdown }
+            likedBy
             actions
         }
         .padding(14)
@@ -80,13 +85,53 @@ struct PostCard: View {
 
             Spacer(minLength: 0)
 
-            // The claim the whole feature rests on: this number came from a
-            // camera, not a text field.
-            Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Theme.Color.valid)
-                .accessibilityLabel("Measured by camera")
+            overflowMenu
         }
+    }
+
+    /// Strava's set, which is the right one: the things you want when someone
+    /// else's post annoys you or delights you, and nothing else.
+    private var overflowMenu: some View {
+        Menu {
+            Button {
+                isFavourite.toggle()
+            } label: {
+                Label(
+                    isFavourite ? "Remove from favourites" : "Add to favourites",
+                    systemImage: isFavourite ? "star.slash" : "star"
+                )
+            }
+
+            Button {
+                notifyOnPost.toggle()
+            } label: {
+                Label(
+                    notifyOnPost ? "Turn off notifications" : "Turn on notifications",
+                    systemImage: notifyOnPost ? "bell.slash" : "bell"
+                )
+            }
+
+            if author != nil {
+                Divider()
+                Button { isFollowing.toggle() } label: {
+                    Label(isFollowing ? "Unfollow" : "Follow", systemImage: isFollowing ? "person.badge.minus" : "person.badge.plus")
+                }
+                Button { isMuted.toggle() } label: {
+                    Label(isMuted ? "Unmute activities" : "Mute activities", systemImage: isMuted ? "speaker.wave.2" : "speaker.slash")
+                }
+                Divider()
+                Button(role: .destructive) {} label: {
+                    Label("Report activity", systemImage: "flag")
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.Color.secondaryText)
+                .frame(width: 28, height: 28)
+                .contentShape(.rect)
+        }
+        .accessibilityLabel("More")
     }
 
     private var titleText: String {
@@ -136,6 +181,17 @@ struct PostCard: View {
                     .foregroundStyle(Theme.Color.secondaryText)
             }
             Spacer(minLength: 0)
+
+            // Sits with the number it certifies rather than up in the corner
+            // — the claim is about the figure, not about the person.
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                Text("MEASURED")
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(Theme.Metric.labelTracking)
+            }
+            .foregroundStyle(Theme.Color.valid)
         }
     }
 
@@ -197,6 +253,43 @@ struct PostCard: View {
     }
 
     private var commentTotal: Int { post?.commentCount ?? example?.commentCount ?? 0 }
+
+    /// Faces then a count, the way Strava does it — "who" lands harder than
+    /// "how many", and three avatars is enough to recognise a friend.
+    @ViewBuilder
+    private var likedBy: some View {
+        if likeTotal > 0 {
+            HStack(spacing: 8) {
+                HStack(spacing: -8) {
+                    ForEach(Array(likerInitials.enumerated()), id: \.offset) { _, initial in
+                        Text(initial)
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Theme.Color.primaryText)
+                            .frame(width: 24, height: 24)
+                            .background(Theme.Color.elevated, in: .circle)
+                            .overlay { Circle().strokeBorder(Theme.Color.card, lineWidth: 2) }
+                    }
+                }
+                Text(likedByLabel)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Theme.Color.secondaryText)
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private var likerInitials: [String] {
+        // Local likes have no people behind them yet; examples borrow from
+        // the same invented cast the feed uses.
+        let pool = ["M", "J", "R", "D", "A"]
+        return Array(pool.prefix(min(3, likeTotal)))
+    }
+
+    private var likedByLabel: String {
+        if isLiked && likeTotal == 1 { return "You liked this" }
+        if isLiked { return "You and \(likeTotal - 1) other\(likeTotal == 2 ? "" : "s")" }
+        return "\(likeTotal) \(likeTotal == 1 ? "person" : "people") liked this"
+    }
 
     private var actions: some View {
         HStack(spacing: 0) {

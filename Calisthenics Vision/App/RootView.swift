@@ -81,14 +81,17 @@ struct RootView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
-            // Sits low, the way Instagram and Strava do — clear of the home
-            // indicator but not floating a centimetre above it. Resting on
-            // the safe-area inset put it noticeably higher than every other
-            // app on the phone.
+            // Sits low, the way Instagram and Strava do.
+            //
+            // `ignoresSafeArea` has to go on the *container*, not the bar:
+            // the bar is positioned by the ZStack's bottom alignment, and the
+            // ZStack's frame is what the safe area shrinks. Putting it on the
+            // bar let the bar draw into the inset while still being laid out
+            // above it, which is why nothing moved.
             AppTabBar(selection: $selectedTab)
-                .padding(.bottom, 14)
-                .ignoresSafeArea(.container, edges: .bottom)
+                .padding(.bottom, 12)
         }
+        .ignoresSafeArea(.container, edges: .bottom)
         .preferredColorScheme(.dark)
     }
 }

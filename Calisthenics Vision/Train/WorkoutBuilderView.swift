@@ -28,7 +28,9 @@ struct WorkoutBuilderView: View {
 
     @State private var chosen: Set<UUID> = []
     @State private var name = ""
+    @State private var notes = ""
     @State private var didPrefill = false
+    @State private var rejected: String?
 
     private var chosenSets: [WorkoutSession] {
         sessions.filter { chosen.contains($0.id) }.sorted { $0.startedAt < $1.startedAt }
@@ -55,6 +57,7 @@ struct WorkoutBuilderView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     nameField
+                    notesField
 
                     if candidates.isEmpty {
                         Text("Nothing recorded in the last two weeks.")
@@ -104,11 +107,42 @@ struct WorkoutBuilderView: View {
             .background(Theme.Color.card, in: .rect(cornerRadius: 10))
 
             if !chosenSets.isEmpty {
-                Text("\(chosen.count) set\(chosen.count == 1 ? "" : "s") selected")
+                Text("\(chosen.count) set\(chosen.count == 1 ? "" : "s") · \(spanLabel)")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.Color.valid)
             }
+
+            if let rejected {
+                Text(rejected)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.Color.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+    }
+
+    private var notesField: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("NOTES").sectionHeaderStyle()
+            TextField("How it went, what you were working on", text: $notes, axis: .vertical)
+                .font(Theme.Font.body())
+                .foregroundStyle(Theme.Color.primaryText)
+                .lineLimit(2...5)
+                .padding(14)
+                .background(Theme.Color.card, in: .rect(cornerRadius: 10))
+        }
+    }
+
+    /// How long the workout ran, end to end.
+    private var spanLabel: String {
+        let sets = chosenSets
+        guard let first = sets.first, let last = sets.last, sets.count > 1 else {
+            return "one set"
+        }
+        let minutes = Int(last.startedAt.timeIntervalSince(first.startedAt) / 60)
+        if minutes < 1 { return "under a minute" }
+        if minutes < 60 { return "\(minutes) min" }
+        return "\(minutes / 60)h \(minutes % 60)m"
     }
 
     private func daySection(_ day: Date, _ sets: [WorkoutSession]) -> some View {
@@ -143,15 +177,16 @@ struct WorkoutBuilderView: View {
 
     private func selectRow(_ session: WorkoutSession) -> some View {
         let isOn = chosen.contains(session.id)
+        let blocked = !isOn && !canAdd(session)
+
         return Button {
-            withAnimation(Theme.Motion.content) {
-                if isOn { chosen.remove(session.id) } else { chosen.insert(session.id) }
-            }
+            withAnimation(Theme.Motion.content) { toggle(session) }
         } label: {
             HStack(spacing: 12) {
-                Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+                Image(systemName: isOn ? "checkmark.circle.fill" : (blocked ? "clock.badge.xmark" : "circle"))
                     .font(.system(size: 19))
-                    .foregroundStyle(isOn ? Theme.Color.valid : Theme.Color.tertiaryText)
+                    .foregroundStyle(isOn ? Theme.Color.valid
+                                     : (blocked ? Theme.Color.divider : Theme.Color.tertiaryText))
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(session.movement.displayName)
@@ -170,6 +205,7 @@ struct WorkoutBuilderView: View {
             }
             .frame(height: 52)
             .contentShape(.rect)
+            .opacity(blocked ? 0.45 : 1)
         }
         .buttonStyle(.plain)
     }
@@ -184,9 +220,20 @@ struct WorkoutBuilderView: View {
             chosen = preselected
             return
         }
-        // Today's sets, because grouping what you just did is the common case.
-        let today = Calendar.current.startOfDay(for: .now)
-        chosen = Set(sessions.filter { $0.startedAt >= today }.map(\.id))
+        // The most recent bout: walk back from the latest set while the gap
+        // stays inside the limit. Grouping what you just finished is the
+        // common case, and "today" would have swept up this morning too.
+        let ordered = sessions.sorted { $0.startedAt > $1.startedAt }
+        guard let latest = ordered.first else { return }
+
+        var bout = [latest]
+        for session in ordered.dropFirst() {
+            guard let previous = bout.last,
+                  previous.startedAt.timeIntervalSince(session.startedAt) <= Workout.maxGapBetweenSets
+            else { break }
+            bout.append(session)
+        }
+        chosen = Set(bout.map(\.id))
     }
 
     private func allChosen(in sets: [WorkoutSession]) -> Bool {
@@ -196,8 +243,40 @@ struct WorkoutBuilderView: View {
     private func toggleAll(_ sets: [WorkoutSession]) {
         if allChosen(in: sets) {
             sets.forEach { chosen.remove($0.id) }
+            rejected = nil
         } else {
-            sets.forEach { chosen.insert($0.id) }
+            // Oldest first, so each addition is checked against a set that's
+            // already in rather than against one that may yet be rejected.
+            for session in sets.sorted(by: { $0.startedAt < $1.startedAt }) {
+                if canAdd(session) { chosen.insert(session.id) }
+            }
+        }
+    }
+
+    private func toggle(_ session: WorkoutSession) {
+        if chosen.contains(session.id) {
+            chosen.remove(session.id)
+            rejected = nil
+            return
+        }
+        guard canAdd(session) else {
+            rejected = "That set is more than three hours from the others — group it as its own workout."
+            Haptics.formBreak()
+            return
+        }
+        rejected = nil
+        chosen.insert(session.id)
+    }
+
+    /// A workout is one bout of training, so every set has to sit within
+    /// `maxGapBetweenSets` of another one already chosen. Without this you
+    /// could fold yesterday morning in with this afternoon and any duration
+    /// computed across it would be meaningless.
+    private func canAdd(_ session: WorkoutSession) -> Bool {
+        let existing = chosenSets
+        guard !existing.isEmpty else { return true }
+        return existing.contains { other in
+            abs(other.startedAt.timeIntervalSince(session.startedAt)) <= Workout.maxGapBetweenSets
         }
     }
 
@@ -208,6 +287,7 @@ struct WorkoutBuilderView: View {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         let workout = Workout(
             name: trimmed.isEmpty ? Workout.suggestedName(for: sets) : trimmed,
+            notes: notes.trimmingCharacters(in: .whitespacesAndNewlines),
             createdAt: sets.first?.startedAt ?? .now,
             sessionIDs: sets.map(\.id)
         )
