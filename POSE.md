@@ -375,7 +375,7 @@ For a segmented hold additionally: several attempts recorded separately, rest
 between them uncounted, a brief dropout not splitting one hold, a sub-second
 blip discarded along with its time, and finishing mid-hold keeping it.
 
-Current coverage: **38 push-up checks, 46 handstand checks**, all passing.
+Current coverage: **38 push-up, 46 handstand, 24 pull-up checks**, all passing.
 
 A fixture that shares a bug with the code proves nothing — the aspect-ratio
 distortion bug passed 14 tests because the fixtures were generated in the
@@ -407,6 +407,7 @@ Every rule above, and the bug that earned it.
 | Skeleton beside the body in landscape | Overlay assumed a 9:16 source while the data output emits physically rotated 16:9 buffers | Law 1 (draw in the space the frames are actually in) |
 | SIGSEGV on the first device build | Main-actor state read from the capture queue | `CLAUDE.md` concurrency invariant |
 | Random crash when switching tabs | The Train screen owned the capture stack, so every tab switch tore down an `AVCaptureSession` and a MediaPipe graph; `AVCaptureVideoDataOutput` doesn't retain its delegate, so a frame landed on freed memory | — (`CaptureStack`, owned above the tab bar) |
+| Fixture and code sharing a bug | A tracker's test fixture must build poses from limb lengths and physical reasoning, never from the tracker's own maths — the pull-up harness asserts the generator produces the angle it claims before testing anything else | §12 |
 | A set of short holds reported as one long hold | Personal records read the session total rather than the best attempt | §8 |
 
 ---
@@ -421,6 +422,11 @@ Change these deliberately; each has a reason above.
 `maxHipDeviation 15` · `minimumRange 45` · `bottomGateFraction 0.42` ·
 `topGateFraction 0.25` · `minConfidence 0.5` · `formConfidence 0.8` ·
 `maxBodyLineDepth 0.6` · `framesToFlag 12` · range decay `0.05`/frame
+
+**PullUpTracker** — `hangAngle 165` `topAngle 70` (seeds only) ·
+`minimumRange 40` · `topGateFraction 0.42` · `hangGateFraction 0.25` ·
+`maxHipDeviation 35` · `minConfidence 0.5` · `formConfidence 0.8` ·
+`maxBodyLineDepth 0.6` · `framesToFlag 12` · hands-overhead margin `0.15 m`
 
 **HandstandTracker** — `idealAlignment 180` · `warnDeviation 45` (warn only,
 never a gate) · `minConfidence 0.5` · `framesToFlag 20` · `maxFrameGapMs 500`

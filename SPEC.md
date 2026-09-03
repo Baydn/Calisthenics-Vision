@@ -62,6 +62,14 @@ what each movement does.
   rep. Hip-sag warning if Shoulder-Hip-Ankle strays more than 15°, and only
   when the body isn't end-on to the camera and the ankles are genuinely
   visible (POSE.md Law 5).
+- **Pull-Up Counter** — `HANG → ASCENDING → TOP` on the elbow angle, counted
+  at the top because that is a pull-up's finished position and when a person
+  expects to hear the number. Gated on the torso being upright *and* both
+  wrists above the shoulders, so a push-up or a curl never registers. Gates
+  are fractions into the person's own range (POSE.md Law 3) and deliberately
+  loose — pulling two thirds of the way up is doing pull-ups. Kipping is
+  flagged when the shoulder-hip-knee line folds past 35°, and only when the
+  knees are genuinely visible.
 - **Handstand Timer** — the clock runs whenever the body is inverted, judged
   from world-space joint heights, with tucked and piked handstands counting.
   Straightness is **scored, never required** (POSE.md Law 4): line quality is

@@ -47,6 +47,7 @@ enum FormIssue: String, Equatable {
     case hipSag = "Keep your hips in line"
     case shallowRep = "Go lower"
     case lostAlignment = "Straighten your line"
+    case kipping = "Keep your legs still"
 }
 
 /// Running totals a tracker exposes for the HUD.
@@ -129,6 +130,7 @@ extension Movement {
     func makeTracker() -> (any MovementTracker)? {
         switch self {
         case .pushUps:   PushUpTracker()
+        case .pullUps:   PullUpTracker()
         case .handstand: HandstandTracker()
         default:         nil
         }

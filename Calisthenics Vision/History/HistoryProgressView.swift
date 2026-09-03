@@ -67,7 +67,7 @@ struct HistoryProgressView: View {
     @State private var range: ProgressRange = .month
     @State private var showPaywall = false
 
-    private let filterOptions: [Movement] = [.pushUps, .handstand]
+    private let filterOptions: [Movement] = [.pushUps, .pullUps, .handstand]
 
     var body: some View {
         ScrollView {

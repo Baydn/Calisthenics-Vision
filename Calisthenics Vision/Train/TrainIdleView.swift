@@ -54,7 +54,9 @@ struct TrainIdleView: View {
     @State private var hasBeatenRecord = false
 
     /// Quick-pick movements; the rest live behind "+ Library".
-    private let quickPicks: [Movement] = [.pushUps, .handstand, .lSit]
+    /// Only movements that are actually tracked. An untracked movement in the
+    /// quick row is a promise the app can't keep; the rest live in Library.
+    private let quickPicks: [Movement] = [.pushUps, .pullUps, .handstand]
 
     /// 20 Hz, so the hundredths on the elapsed clock actually move. The hold
     /// clock is driven by pose frames instead and updates with them.
