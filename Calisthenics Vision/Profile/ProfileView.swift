@@ -39,6 +39,7 @@ struct ProfileView: View {
                 socialCounts
                 thisWeek
                 bestEfforts
+                skillTree
                 calendar
                 trophies
             }
@@ -196,6 +197,19 @@ struct ProfileView: View {
         movement.isTimedHold
             ? SessionResult.durationLabel(mine.map(\.bestHold).max() ?? 0)
             : "\(mine.map(\.repCount).max() ?? 0) reps"
+    }
+
+    // MARK: - Skill tree
+
+    private var skillTree: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("SKILL TREE").sectionHeaderStyle()
+            SkillTreeView(sessions: sessions)
+            Text("Nodes fill from measured sessions — the ring is how close your best effort is to the target. Targets are provisional: ten reps, or ten seconds for a hold.")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.Color.tertiaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     // MARK: - Calendar
