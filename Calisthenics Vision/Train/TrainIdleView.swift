@@ -847,6 +847,10 @@ struct TrainIdleView: View {
                          ? "no pose"
                          : "\(Int(poseSession.processedFPS)) fps")
                 }
+                if poseSession.rejectedDetections > 0 {
+                    Text("rejected \(poseSession.rejectedDetections)")
+                        .foregroundStyle(Theme.Color.secondaryText)
+                }
                 if let d = tracker?.diagnostics {
                     Text(d.readyLabel)
                         .foregroundStyle(d.isReady ? Theme.Color.valid : Theme.Color.secondaryText)

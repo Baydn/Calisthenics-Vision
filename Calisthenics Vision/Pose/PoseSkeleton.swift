@@ -170,6 +170,48 @@ struct Pose {
         return Double(acos(cosine)) * 180 / Double.pi
     }
 
+    // MARK: - Plausibility
+
+    /// Whether these landmarks describe something that could be a human body.
+    ///
+    /// MediaPipe always returns *a* pose when it fires — it has no "that
+    /// isn't a person" output, only confidences. Given a coat on a chair or a
+    /// pattern on a wall it will occasionally emit a full 33-point skeleton
+    /// with plausible-looking numbers for a frame or two. Everything
+    /// downstream believed it, because the only check was that the array
+    /// wasn't empty.
+    ///
+    /// This is a geometry check, not a confidence one: a real torso has a
+    /// length and a width, and they're in proportion to each other. Bounds
+    /// are deliberately wide — the job is to reject nonsense, not to police
+    /// body shape.
+    var isPlausibleBody: Bool {
+        guard let leftShoulder = worldPoint(.leftShoulder),
+              let rightShoulder = worldPoint(.rightShoulder),
+              let leftHip = worldPoint(.leftHip),
+              let rightHip = worldPoint(.rightHip)
+        else { return false }
+
+        let shoulderWidth = simd_length(leftShoulder - rightShoulder)
+        let hipWidth = simd_length(leftHip - rightHip)
+        let torso = simd_length(
+            (leftShoulder + rightShoulder) / 2 - (leftHip + rightHip) / 2
+        )
+
+        // World landmarks are metric, roughly life-sized. An adult torso runs
+        // about 0.5 m and shoulders about 0.4 m; these bounds cover children
+        // through to very large adults and still exclude collapsed geometry.
+        guard (0.12...1.0).contains(torso),
+              (0.08...0.8).contains(shoulderWidth),
+              (0.05...0.7).contains(hipWidth)
+        else { return false }
+
+        // Shoulders are never dramatically narrower than the torso is long,
+        // nor several times wider. Spurious detections routinely are.
+        let ratio = shoulderWidth / torso
+        return (0.2...3.0).contains(ratio)
+    }
+
     /// Bones drawn by the HUD overlay.
     static let connections: [(PoseJoint, PoseJoint)] = [
         (.leftShoulder, .rightShoulder),

@@ -49,8 +49,13 @@ final class PoseLandmarkerService {
         options.baseOptions.delegate = .GPU
         options.runningMode = .liveStream
         options.numPoses = 1
-        options.minPoseDetectionConfidence = 0.5
-        options.minPosePresenceConfidence = 0.5
+        // Detection and presence are raised above the 0.5 default: the model
+        // will happily emit a skeleton for a coat on a chair, and those
+        // detections score lower than a real person. Tracking stays at 0.5,
+        // so once a real body is locked on it isn't dropped the moment a limb
+        // is occluded.
+        options.minPoseDetectionConfidence = 0.6
+        options.minPosePresenceConfidence = 0.6
         options.minTrackingConfidence = 0.5
         options.poseLandmarkerLiveStreamDelegate = liveStreamDelegate
 

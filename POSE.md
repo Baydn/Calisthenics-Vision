@@ -126,6 +126,44 @@ feature untrustworthy.
 
 ---
 
+## 3b. Is that even a person?
+
+**MediaPipe has no "that isn't a body" output.** It returns a pose whenever it
+fires, with confidences attached — so a coat on a chair or a pattern on a wall
+can produce a full 33-point skeleton for a frame or two, and nothing in the
+result says otherwise.
+
+Two gates, because either alone is insufficient:
+
+### Geometry — `Pose.isPlausibleBody`
+
+A real torso has a length and a width and they're in proportion. World
+landmarks are metric, so this is checkable in absolute terms:
+
+| Check | Bounds |
+|---|---|
+| Torso length (shoulder mid → hip mid) | 0.12–1.0 m |
+| Shoulder width | 0.08–0.8 m |
+| Hip width | 0.05–0.7 m |
+| Shoulder width ÷ torso length | 0.2–3.0 |
+
+Bounds are deliberately wide: the job is to reject nonsense, not to police
+body shape. They cover a small child through a very large adult.
+
+### Time — the detection has to persist
+
+A real body stays; a spurious detection doesn't. A pose must appear in
+**3 consecutive frames** (~100 ms) before it is published to the overlay or
+any tracker.
+
+Dropping is slower than confirming — **6 frames** — because briefly losing a
+limb behind your own torso is normal, and tearing the pose down would stop a
+hold clock mid-hold. Smoothing runs during the unconfirmed window, so the
+first published pose is already settled rather than snapping in.
+
+**Never lower the confirm count to zero for responsiveness.** 100 ms is below
+noticing; a flickering skeleton on an empty room is not.
+
 ## 4. Smoothing
 
 `PoseSmoother` applies an EMA (`factor = 0.6`) to **both** point arrays
@@ -375,7 +413,7 @@ For a segmented hold additionally: several attempts recorded separately, rest
 between them uncounted, a brief dropout not splitting one hold, a sub-second
 blip discarded along with its time, and finishing mid-hold keeping it.
 
-Current coverage: **38 push-up, 46 handstand, 24 pull-up checks**, all passing.
+Current coverage: **38 push-up, 46 handstand, 24 pull-up, 17 body-plausibility checks**, all passing.
 
 A fixture that shares a bug with the code proves nothing — the aspect-ratio
 distortion bug passed 14 tests because the fixtures were generated in the
@@ -408,6 +446,7 @@ Every rule above, and the bug that earned it.
 | SIGSEGV on the first device build | Main-actor state read from the capture queue | `CLAUDE.md` concurrency invariant |
 | Random crash when switching tabs | The Train screen owned the capture stack, so every tab switch tore down an `AVCaptureSession` and a MediaPipe graph; `AVCaptureVideoDataOutput` doesn't retain its delegate, so a frame landed on freed memory | — (`CaptureStack`, owned above the tab bar) |
 | Fixture and code sharing a bug | A tracker's test fixture must build poses from limb lengths and physical reasoning, never from the tracker's own maths — the pull-up harness asserts the generator produces the angle it claims before testing anything else | §12 |
+| Skeleton flashing onto furniture and empty rooms | Any non-empty landmark array was accepted — no geometry check, no confidence check, no persistence requirement | §3b |
 | A set of short holds reported as one long hold | Personal records read the session total rather than the best attempt | §8 |
 
 ---

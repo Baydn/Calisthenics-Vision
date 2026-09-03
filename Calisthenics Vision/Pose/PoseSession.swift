@@ -40,6 +40,30 @@ final class PoseSession {
     @ObservationIgnored private var smoother = PoseSmoother()
     @ObservationIgnored private var frameTimes: [Double] = []
 
+    // MARK: - Detection gate
+    //
+    // MediaPipe has no "that isn't a person" output, so a coat on a chair or
+    // a pattern on a wall can produce a full skeleton for a frame or two.
+    // A real body persists; a spurious detection doesn't — so a pose has to
+    // survive a few consecutive frames before anything is told about it.
+
+    /// Frames a plausible body must appear in before it's published.
+    /// 3 at 30 FPS is ~100 ms — below noticing, above a flicker.
+    @ObservationIgnored private let framesToConfirm = 3
+    /// Frames it must be absent before it's dropped. Higher than the confirm
+    /// count on purpose: briefly losing a limb behind your own body is
+    /// normal, and dropping the pose would stop a hold clock mid-hold.
+    @ObservationIgnored private let framesToDrop = 6
+
+    @ObservationIgnored private var plausibleFrames = 0
+    @ObservationIgnored private var missingFrames = 0
+    @ObservationIgnored private var isConfirmed = false
+
+    #if DEBUG
+    /// Detections rejected as implausible, for the on-device readout.
+    private(set) var rejectedDetections = 0
+    #endif
+
     /// Begins detecting on frames from `source`.
     ///
     /// The caller owns the source's lifecycle — this only subscribes. That
@@ -84,6 +108,9 @@ final class PoseSession {
         pose = nil
         frameTimes.removeAll()
         processedFPS = 0
+        plausibleFrames = 0
+        missingFrames = 0
+        isConfirmed = false
     }
 
     /// Stops detecting and releases the landmarker.
@@ -101,9 +128,7 @@ final class PoseSession {
         recordFrameTime()
 
         guard let landmarks = result?.landmarks.first, !landmarks.isEmpty else {
-            pose = nil
-            smoother.reset()
-            onPose?(nil, timestampMs)
+            release(at: timestampMs)
             return
         }
 
@@ -115,16 +140,53 @@ final class PoseSession {
             SIMD3<Double>(Double($0.x), Double($0.y), Double($0.z))
         }
 
-        let smoothed = smoother.smooth(
-            Pose(
-                points: points,
-                confidence: confidence,
-                aspect: engine.sourceAspect,
-                worldPoints: world
-            )
+        let candidate = Pose(
+            points: points,
+            confidence: confidence,
+            aspect: engine.sourceAspect,
+            worldPoints: world
         )
+
+        guard candidate.isPlausibleBody else {
+            #if DEBUG
+            rejectedDetections += 1
+            #endif
+            release(at: timestampMs)
+            return
+        }
+
+        missingFrames = 0
+        plausibleFrames += 1
+
+        // Hold everything back until the detection has proved it's persistent.
+        // Smoothing still runs, so the first published pose is already settled
+        // rather than snapping in from the raw first frame.
+        let smoothed = smoother.smooth(candidate)
+        guard isConfirmed || plausibleFrames >= framesToConfirm else { return }
+        isConfirmed = true
+
         pose = smoothed
         onPose?(smoothed, timestampMs)
+    }
+
+    /// Handles a frame with no usable body in it.
+    @MainActor
+    private func release(at timestampMs: Int) {
+        plausibleFrames = 0
+        missingFrames += 1
+
+        // Ride out a brief dropout rather than tearing the pose down, which
+        // would pause a hold clock every time a limb passed behind the torso.
+        guard isConfirmed else {
+            smoother.reset()
+            return
+        }
+        guard missingFrames >= framesToDrop else { return }
+
+        isConfirmed = false
+        pose = nil
+        smoother.reset()
+        onPose?(nil, timestampMs)
     }
 
     @MainActor
