@@ -399,7 +399,6 @@ struct TrainIdleView: View {
     private var cameraLayer: some View {
         if case .running = camera.status {
             ZStack {
-                Theme.Color.background
                 CameraPreviewView(
                     session: camera.captureSession,
                     onRotationChange: { camera.setRotation($0) }
@@ -415,34 +414,13 @@ struct TrainIdleView: View {
                     pose: poseSession.pose,
                     isFormValid: progress.isFormValid,
                     sourceAspect: poseSession.pose?.aspect ?? 9.0 / 16.0,
-                    contentMode: .fit
+                    contentMode: .fill
                 )
             }
-            .overlay { viewfinderEdge }
             .ignoresSafeArea()
         } else {
             Color(red: 0.09, green: 0.09, blue: 0.09)
                 .ignoresSafeArea()
-        }
-    }
-
-    /// Marks where the captured frame actually ends. Without it the letterbox
-    /// bands read as the preview having failed rather than as deliberate
-    /// framing, and you can't tell where the edge of the recording is — which
-    /// is the whole reason for fitting instead of filling.
-    @ViewBuilder
-    private var viewfinderEdge: some View {
-        GeometryReader { proxy in
-            let aspect = poseSession.pose?.aspect ?? 9.0 / 16.0
-            let viewAspect = proxy.size.width / max(proxy.size.height, 1)
-            let width = aspect > viewAspect ? proxy.size.width : proxy.size.height * aspect
-            let height = aspect > viewAspect ? proxy.size.width / aspect : proxy.size.height
-
-            RoundedRectangle(cornerRadius: 4)
-                .strokeBorder(Theme.Color.primaryText.opacity(0.10), lineWidth: 1)
-                .frame(width: width, height: height)
-                .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
-                .allowsHitTesting(false)
         }
     }
 

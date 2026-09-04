@@ -24,13 +24,13 @@ struct CameraPreviewView: UIViewRepresentable {
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
         view.previewLayer.session = session
-        // Fit: the whole captured frame is shown, nothing cropped away.
+        // Fill: the live preview runs edge to edge.
         //
-        // The screen is taller than the 9:16 capture, so this leaves a band
-        // above and below. Those bands are given to the HUD rather than left
-        // as dead black — the controls sit in them instead of over your body,
-        // which is the one thing on screen worth not covering.
-        view.previewLayer.videoGravity = .resizeAspect
+        // The recording keeps the full frame regardless — the crop here is
+        // only what's shown while you train, and review plays back the whole
+        // picture. A viewfinder with black bands in it is a worse thing to
+        // train in front of than a slightly cropped one.
+        view.previewLayer.videoGravity = .resizeAspectFill
         view.onRotationChange = onRotationChange
         return view
     }
