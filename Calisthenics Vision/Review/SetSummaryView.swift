@@ -9,10 +9,10 @@
 //  time — so this ranks the set against your own history and says where it
 //  landed: second best ever, best in six weeks, best this week.
 //
-//  The count and the context are real, computed from sessions already on the
-//  phone with no account involved. The biometrics below them are a design
-//  preview and are marked as one: the telemetry to derive them is already
-//  written to disk every session, but nothing analyses it yet.
+//  The count, the context and the biometrics below are all real — the last of
+//  those from SessionAnalyzer, reading the telemetry already written to disk
+//  every session. Nothing here is illustrative; a set with too little
+//  telemetry to say anything about shows nothing rather than a guess.
 //
 
 import SwiftData
@@ -24,6 +24,9 @@ struct SetSummaryView: View {
     @Environment(\.dismiss) private var dismiss
     @Query private var allSessions: [WorkoutSession]
     @State private var showComposer = false
+    @State private var openReviewAt: SeekTarget?
+
+    private var analysis: SessionAnalysis? { SessionAnalyzer.analyze(session) }
 
     private var context: PerformanceContext {
         SessionStore.context(for: session, among: allSessions)
@@ -43,23 +46,29 @@ struct SetSummaryView: View {
                         .padding(.bottom, 28)
                 }
 
-                Text("HOW IT WENT")
-                    .sectionHeaderStyle()
-                    .padding(.bottom, 10)
+                if let analysis {
+                    if !analysis.metrics.isEmpty {
+                        Text("HOW IT WENT")
+                            .sectionHeaderStyle()
+                            .padding(.bottom, 10)
 
-                PreviewNotice(
-                    "These come from telemetry that's already recorded — the analysis to derive them isn't written yet, so the figures below are illustrative."
-                )
-                .padding(.bottom, 12)
+                        metrics(analysis.metrics)
+                            .padding(.bottom, 26)
+                    }
 
-                metrics
-                    .padding(.bottom, 26)
+                    if !analysis.takeaways.isEmpty {
+                        Text("TAKEAWAYS")
+                            .sectionHeaderStyle()
+                            .padding(.bottom, 10)
 
-                Text("TAKEAWAY")
-                    .sectionHeaderStyle()
-                    .padding(.bottom, 10)
-
-                takeaway
+                        takeaways(analysis.takeaways)
+                    }
+                } else {
+                    Text("Not enough recorded telemetry to say anything about this set — turn on \"Record video\" in Settings to get this next time.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.Color.tertiaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .padding(.horizontal, Theme.Metric.screenPadding)
             .padding(.top, 12)
@@ -91,6 +100,14 @@ struct SetSummaryView: View {
         }
         .sheet(isPresented: $showComposer) {
             PostComposerView(sessionIDs: [session.id])
+        }
+        // A sheet rather than a push: this screen has no NavigationStack of
+        // its own (it's already presented as a sheet from Train), and
+        // review is a full screen in its own right, not a drill-down.
+        .sheet(item: $openReviewAt) { target in
+            NavigationStack {
+                SessionReviewView(session: session, initialSeekMs: target.ms)
+            }
         }
         .preferredColorScheme(.dark)
     }
@@ -185,20 +202,20 @@ struct SetSummaryView: View {
         }
     }
 
-    private var metrics: some View {
+    private func metrics(_ items: [(label: String, value: String)]) -> some View {
         VStack(spacing: 0) {
-            ForEach(Array(illustrativeMetrics.enumerated()), id: \.offset) { index, item in
+            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                 HStack {
-                    Text(item.0)
+                    Text(item.label)
                         .font(Theme.Font.body())
                         .foregroundStyle(Theme.Color.secondaryText)
                     Spacer(minLength: 8)
-                    Text(item.1)
+                    Text(item.value)
                         .font(.system(size: 15, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Theme.Color.primaryText)
                 }
                 .frame(height: 42)
-                if index < illustrativeMetrics.count - 1 {
+                if index < items.count - 1 {
                     Rectangle().fill(Theme.Color.rowSeparator).frame(height: 1)
                 }
             }
@@ -207,42 +224,39 @@ struct SetSummaryView: View {
         .background(Theme.Color.card, in: .rect(cornerRadius: Theme.Metric.cardRadius))
     }
 
-    private var illustrativeMetrics: [(String, String)] {
-        session.movement.isTimedHold
-            ? [("Time to stabilise", "1.2 s"),
-               ("Sway", "4.1 cm"),
-               ("Line decay", "−18% over the hold")]
-            : [("Tempo", "1.4s ↓ / 0.9s ↑"),
-               ("Depth consistency", "92%"),
-               ("Left / right", "51 / 49")]
-    }
-
-    private var takeaway: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(takeawayText)
-                .font(.system(size: 14.5))
-                .foregroundStyle(Theme.Color.primaryText)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("Jump to that moment")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Theme.Color.valid)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(Theme.Color.card, in: .rect(cornerRadius: Theme.Metric.cardRadius))
-        .overlay(alignment: .leading) {
-            Rectangle()
-                .fill(Theme.Color.warning)
-                .frame(width: 2)
-                .clipShape(.rect(cornerRadius: 1))
+    private func takeaways(_ items: [Takeaway]) -> some View {
+        VStack(spacing: 10) {
+            ForEach(items) { item in
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(item.text)
+                        .font(.system(size: 14.5))
+                        .foregroundStyle(Theme.Color.primaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let ms = item.timestampMs {
+                        Button("See that moment") { openReviewAt = SeekTarget(ms: ms) }
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.Color.valid)
+                            .buttonStyle(.plain)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+                .background(Theme.Color.card, in: .rect(cornerRadius: Theme.Metric.cardRadius))
+                .overlay(alignment: .leading) {
+                    Rectangle()
+                        .fill(item.timestampMs != nil ? Theme.Color.warning : Theme.Color.valid)
+                        .frame(width: 2)
+                        .clipShape(.rect(cornerRadius: 1))
+                }
+            }
         }
     }
+}
 
-    private var takeawayText: String {
-        session.movement.isTimedHold
-            ? "Your line held at 84% for the first eight seconds and 61% after. The hip opened; the shoulder held."
-            : "Depth held steady for 18 reps then dropped 18%. Rep 19 is where fatigue started."
-    }
+/// `Int` isn't Identifiable, and `.sheet(item:)` needs that.
+private struct SeekTarget: Identifiable {
+    let id = UUID()
+    let ms: Int
 }
 
 #Preview {

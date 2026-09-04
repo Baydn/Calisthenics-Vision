@@ -16,6 +16,9 @@ import SwiftUI
 
 struct SessionReviewView: View {
     let session: WorkoutSession
+    /// Capture-clock instant to seek to once the video has loaded — how a
+    /// takeaway on the set summary jumps straight to the frame it names.
+    var initialSeekMs: Int?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -469,6 +472,15 @@ struct SessionReviewView: View {
         guard let url = session.videoURL,
               FileManager.default.fileExists(atPath: url.path(percentEncoded: false))
         else { return }
+
+        defer {
+            if let target = initialSeekMs {
+                let base = session.videoStartMs ?? 0
+                let seconds = max(0, Double(target - base) / 1000)
+                currentTime = seconds
+                seek(to: seconds)
+            }
+        }
 
         let asset = AVURLAsset(url: url)
         duration = (try? await asset.load(.duration).seconds) ?? session.duration
