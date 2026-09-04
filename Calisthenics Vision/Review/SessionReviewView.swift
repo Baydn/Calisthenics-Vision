@@ -204,12 +204,11 @@ struct SessionReviewView: View {
 
     private var isCompactHeight: Bool { verticalSizeClass == .compact }
 
-    /// Sized from the recording's own shape rather than a fixed number: a
-    /// portrait clip letterboxed into a squat box wastes most of the screen,
-    /// and seeing the whole body is the point of the replay.
+    /// A portrait clip gets real height — the replay exists to show the whole
+    /// body, and 340pt of a 9:16 picture is a strip.
     private var stageHeight: CGFloat {
         if isCompactHeight { return 220 }
-        return videoAspect < 1 ? 460 : 300
+        return videoAspect < 1 ? 480 : 300
     }
 
     private var videoStage: some View {
@@ -232,13 +231,13 @@ struct SessionReviewView: View {
             }
 
             if showsSkeleton, let pose = poseAtCurrentTime {
-                // The player letterboxes (resizeAspect), so the overlay has to
-                // fit the same way or the skeleton drifts off the body.
+                // The player fills, so the overlay has to fill the same way or
+                // the skeleton drifts off the body.
                 PoseOverlayView(
                     pose: pose,
                     isFormValid: true,
                     sourceAspect: videoAspect,
-                    contentMode: .fit
+                    contentMode: .fill
                 )
             }
 
@@ -588,9 +587,10 @@ private struct VideoPlayerLayer: UIViewRepresentable {
     func makeUIView(context: Context) -> PlayerView {
         let view = PlayerView()
         view.playerLayer.player = player
-        // Fit rather than fill: a portrait recording in a landscape-ish stage
-        // would otherwise be cropped down to a strip of your torso.
-        view.playerLayer.videoGravity = .resizeAspect
+        // Fill, matching the Train screen. A handstand clip is portrait and
+        // the point of the replay is seeing the body full height, not a
+        // letterboxed strip with black above and below it.
+        view.playerLayer.videoGravity = .resizeAspectFill
         return view
     }
 

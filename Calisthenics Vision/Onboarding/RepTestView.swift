@@ -201,7 +201,7 @@ struct RepTestView: View {
                     pose: poseSession.pose,
                     isFormValid: progress.isFormValid,
                     sourceAspect: poseSession.pose?.aspect ?? 9.0 / 16.0,
-                    contentMode: .fit
+                    contentMode: .fill
                 )
             }
             .ignoresSafeArea()

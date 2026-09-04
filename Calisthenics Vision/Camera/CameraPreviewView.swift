@@ -24,15 +24,15 @@ struct CameraPreviewView: UIViewRepresentable {
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
         view.previewLayer.session = session
-        // Fit, not fill.
+        // Fill.
         //
-        // The capture is 9:16 and the screen is taller than that, so filling
-        // cropped the sides — you were framing yourself against a picture
-        // narrower than the one being recorded, and couldn't tell whether
-        // your hands or feet had made it in. For an app whose whole job is
-        // seeing your whole body, showing less than it captures is the wrong
-        // trade; letterboxing is the honest one.
-        view.previewLayer.videoGravity = .resizeAspect
+        // The capture is 9:16 and the screen is taller, so this crops the
+        // sides — but a full-height portrait picture is what you want when
+        // the subject is a standing or inverted body, and letterboxing to
+        // avoid the crop wasted the top and bottom of the screen on black.
+        // The cropped edges are still written to the recording, so nothing is
+        // lost; it's a framing decision, not a capture one.
+        view.previewLayer.videoGravity = .resizeAspectFill
         view.onRotationChange = onRotationChange
         return view
     }
