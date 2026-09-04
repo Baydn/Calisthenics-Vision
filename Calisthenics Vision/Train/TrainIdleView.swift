@@ -64,6 +64,15 @@ struct TrainIdleView: View {
     /// Chosen from the library, not hardcoded — see AppSettings.pinnedMovements.
     private var quickPicks: [Movement] { settings.pinnedMovements }
 
+    /// Unpinning the selected movement in the library would leave Train set to
+    /// something no chip shows as active, so follow the list back.
+    private func reconcileSelection() {
+        guard phase == .idle, !quickPicks.isEmpty, !quickPicks.contains(selected),
+              let first = quickPicks.first
+        else { return }
+        select(first)
+    }
+
     /// 20 Hz, so the hundredths on the elapsed clock actually move. The hold
     /// clock is driven by pose frames instead and updates with them.
     private let ticker = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
@@ -113,8 +122,9 @@ struct TrainIdleView: View {
             }
         }
         .sheet(isPresented: $showLibrary) {
-            MovementLibraryView(selected: $selected)
+            MovementLibraryView()
         }
+        .onChange(of: settings.pinnedMovements) { _, _ in reconcileSelection() }
         .sheet(isPresented: $showMovementSettings) {
             MovementSettingsView(movement: selected)
         }

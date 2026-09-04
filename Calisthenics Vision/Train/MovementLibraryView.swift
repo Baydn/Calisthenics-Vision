@@ -13,24 +13,32 @@
 //  "not tracked yet". Hiding them would make the library lie about where the
 //  app is going, and picking one still lets you record the set.
 //
-//  Which movements show as one-tap chips on Train is a choice made here, not
-//  a fixed list — tap the star. Quick Picks sits pinned at the top so
-//  choosing is a couple of taps rather than a hunt.
+//  This screen has one job: choose which movements appear as chips on Train,
+//  and in what order. Tapping a card pins it; the green outline and the bar at
+//  the top are the same set seen two ways. There is no second screen behind a
+//  card — a tap that could mean either "pin this" or "tell me about this" has
+//  to be disambiguated by the user every time, and pinning is what people come
+//  here to do.
+//
+//  Laid out as cards rather than rows. Thirty-nine names in a list is a wall
+//  of text you have to read; a grid of figures is something you can scan, and
+//  it's the one screen where a drawing of the movement beats its label. Rows
+//  are still right where the name is the point — history, workouts — and the
+//  glyph stays small there.
 //
 
 import SwiftUI
 
 struct MovementLibraryView: View {
-    @Binding var selected: Movement
 
     @Environment(\.dismiss) private var dismiss
-    @Environment(Entitlements.self) private var entitlements
-
     @State private var settings = AppSettings.shared
     @State private var search = ""
     @State private var equipment: Equipment?
-    @State private var detail: Movement?
-    @State private var showPaywall = false
+    /// The chip currently being dragged in the Train bar.
+    @State private var dragging: Movement?
+    /// Which gap in the Train bar a drop would land in.
+    @State private var dropIndex: Int?
 
     private var matches: [Movement] {
         Movement.allCases.filter { movement in
@@ -49,36 +57,55 @@ struct MovementLibraryView: View {
             .sorted { ($0.difficulty, $0.displayName) < ($1.difficulty, $1.displayName) }
     }
 
+    /// Three columns. The grid exists to be scanned, and two columns only fit
+    /// six movements on screen — barely better than the list it replaced. The
+    /// figure stays legible at this size because it's drawn rather than
+    /// resampled from an image.
+    private let columns = Array(
+        repeating: GridItem(.flexible(), spacing: 8), count: 3
+    )
+
+    /// Tighter than `screenPadding`, which is set for reading a column of text
+    /// rather than for a grid.
+    private let gridPadding: CGFloat = 20
+
     var body: some View {
         NavigationStack {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: []) {
-                    searchField
-                        .padding(.horizontal, Theme.Metric.screenPadding)
-                        .padding(.bottom, 12)
+            VStack(spacing: 0) {
+                // Fixed above the grid rather than scrolling with it: you star
+                // things from the list below and watch them land here, which
+                // is the whole point of the bar.
+                if !settings.pinnedMovements.isEmpty {
+                    quickPicksBar
+                    Divider().overlay(Theme.Color.divider)
+                }
 
-                    equipmentRow
-                        .padding(.bottom, 26)
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0, pinnedViews: []) {
+                        searchField
+                            .padding(.horizontal, Theme.Metric.screenPadding)
+                            .padding(.top, 10)
+                            .padding(.bottom, 12)
 
-                    if !settings.pinnedMovements.isEmpty {
-                        quickPicksSection
-                            .padding(.bottom, 26)
-                    }
+                        equipmentRow
+                            .padding(.bottom, 22)
 
-                    if matches.isEmpty {
-                        emptyState
-                    } else {
-                        ForEach(MovementCategory.allCases) { category in
-                            let items = movements(in: category)
-                            if !items.isEmpty {
-                                section(category, items)
+                        if matches.isEmpty {
+                            emptyState
+                        } else {
+                            ForEach(MovementCategory.allCases) { category in
+                                let items = movements(in: category)
+                                if !items.isEmpty {
+                                    section(category.displayName.uppercased(), items,
+                                            trailing: "\(items.count)")
+                                }
                             }
                         }
                     }
+                    .padding(.bottom, 32)
                 }
-                .padding(.bottom, 32)
+                .scrollIndicators(.hidden)
             }
-            .scrollIndicators(.hidden)
             .background(Theme.Color.background)
             .navigationTitle("Movements")
             .navigationBarTitleDisplayMode(.large)
@@ -87,43 +114,124 @@ struct MovementLibraryView: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .navigationDestination(item: $detail) { movement in
-                MovementDetailView(movement: movement) {
-                    choose(movement)
-                }
-            }
         }
         .preferredColorScheme(.dark)
-        .sheet(isPresented: $showPaywall) { PaywallView() }
     }
 
     // MARK: - Quick picks
 
-    private var quickPicksSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+    /// The movements that appear as chips on Train, in the order they appear
+    /// there. Drag to reorder; the star in the grid below adds and removes.
+    private var quickPicksBar: some View {
+        VStack(alignment: .leading, spacing: 7) {
             HStack {
-                Text("QUICK PICKS").sectionHeaderStyle()
+                Text("ON TRAIN").sectionHeaderStyle()
                 Spacer()
-                Text("SHOWN ON TRAIN").cardLabelStyle()
+                Text(dragging == nil ? "DRAG TO REORDER" : "DROP TO PLACE")
+                    .cardLabelStyle()
             }
-            .padding(.horizontal, Theme.Metric.screenPadding)
+            .padding(.horizontal, gridPadding)
 
-            VStack(spacing: 0) {
-                ForEach(Array(settings.pinnedMovements.enumerated()), id: \.element.id) { index, movement in
-                    row(movement)
-                    if index < settings.pinnedMovements.count - 1 {
-                        Rectangle()
-                            .fill(Theme.Color.rowSeparator)
-                            .frame(height: 1)
-                            .padding(.leading, 34)
+            ScrollView(.horizontal) {
+                // Drops land in the gaps *between* chips, not on top of them.
+                // Targeting a chip can only ever mean "take that one's place",
+                // which is a swap; targeting a gap means "go here", which is
+                // what dragging something into a list should do.
+                HStack(spacing: 0) {
+                    dropGap(0)
+                    ForEach(Array(settings.pinnedMovements.enumerated()), id: \.element) { index, movement in
+                        pickChip(movement)
+                            .opacity(dragging == movement ? 0.35 : 1)
+                            .draggable(movement.rawValue) {
+                                pickChip(movement).opacity(0.9)
+                            }
+                        dropGap(index + 1)
                     }
                 }
+                .padding(.horizontal, gridPadding - 8)
+                .animation(Theme.Motion.content, value: settings.pinnedMovements)
             }
-            .padding(.horizontal, 14)
-            .background(Theme.Color.card, in: .rect(cornerRadius: Theme.Metric.cardRadius))
-            .padding(.horizontal, Theme.Metric.screenPadding)
+            .scrollIndicators(.hidden)
         }
+        .padding(.vertical, 10)
     }
+
+    /// A landing slot between two chips. It widens while a chip is over it, so
+    /// the gap you are about to drop into is the one you can see.
+    private func dropGap(_ index: Int) -> some View {
+        let active = dropIndex == index
+        return RoundedRectangle(cornerRadius: 2)
+            .fill(active ? Theme.Color.valid : .clear)
+            .frame(width: active ? 3 : 2, height: 24)
+            .padding(.horizontal, active ? 6 : 3.5)
+            .contentShape(.rect.inset(by: -7))
+            .dropDestination(for: String.self) { items, _ in
+                insert(items.first, at: index)
+            } isTargeted: { over in
+                withAnimation(Theme.Motion.selection) {
+                    dropIndex = over ? index : (dropIndex == index ? nil : dropIndex)
+                }
+            }
+    }
+
+    private func pickChip(_ movement: Movement) -> some View {
+        HStack(spacing: 6) {
+            MovementGlyphView(
+                movement: movement,
+                tint: Theme.Color.primaryText,
+                background: Theme.Color.card,
+                weight: 5.4,
+                showsProp: false,
+                padding: 2
+            )
+            .frame(width: 26, height: 26)
+
+            Text(movement.displayName)
+                .font(Theme.Font.control())
+                .foregroundStyle(Theme.Color.primaryText)
+                .lineLimit(1)
+
+            Button {
+                withAnimation(Theme.Motion.content) { togglePin(movement) }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Theme.Color.tertiaryText)
+                    .frame(width: 18, height: 18)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.leading, 7)
+        .padding(.trailing, 3)
+        .frame(height: 38)
+        .background(Theme.Color.card, in: .capsule)
+    }
+
+    /// Inserts the dragged movement at `index`, which is a position between
+    /// chips rather than another chip's slot.
+    private func insert(_ raw: String?, at index: Int) -> Bool {
+        defer { dragging = nil; dropIndex = nil }
+        guard let raw, let moved = Movement(rawValue: raw),
+              let from = settings.pinnedMovements.firstIndex(of: moved)
+        else { return false }
+
+        // Removing first shifts every later slot down by one.
+        let to = index > from ? index - 1 : index
+        guard to != from else { return false }
+
+        withAnimation(Theme.Motion.content) {
+            var order = settings.pinnedMovements
+            order.remove(at: from)
+            order.insert(moved, at: min(to, order.count))
+            settings.pinnedMovements = order
+        }
+        return true
+    }
+
+    // MARK: - Pinning
+
+    // MARK: - Pinning
 
     private func isPinned(_ movement: Movement) -> Bool {
         settings.pinnedMovements.contains(movement)
@@ -185,75 +293,73 @@ struct MovementLibraryView: View {
         .scrollIndicators(.hidden)
     }
 
-    private func section(_ category: MovementCategory, _ items: [Movement]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private func section(_ title: String, _ items: [Movement], trailing: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(category.displayName.uppercased())
-                    .sectionHeaderStyle()
+                Text(title).sectionHeaderStyle()
                 Spacer()
-                Text("\(items.count)")
-                    .cardLabelStyle()
+                Text(trailing).cardLabelStyle()
             }
             .padding(.horizontal, Theme.Metric.screenPadding)
 
-            VStack(spacing: 0) {
-                ForEach(Array(items.enumerated()), id: \.element.id) { index, movement in
-                    row(movement)
-                    if index < items.count - 1 {
-                        Rectangle()
-                            .fill(Theme.Color.rowSeparator)
-                            .frame(height: 1)
-                            .padding(.leading, 34)
-                    }
-                }
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(items) { card($0) }
             }
-            .padding(.horizontal, 14)
-            .background(Theme.Color.card, in: .rect(cornerRadius: Theme.Metric.cardRadius))
-            .padding(.horizontal, Theme.Metric.screenPadding)
+            .padding(.horizontal, gridPadding)
         }
-        .padding(.bottom, 22)
+        .padding(.bottom, 26)
     }
 
-    private func row(_ movement: Movement) -> some View {
-        Button { detail = movement } label: {
-            HStack(spacing: 12) {
-                DifficultyPill(level: movement.difficulty)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(movement.displayName)
-                        .font(Theme.Font.body())
-                        .foregroundStyle(Theme.Color.primaryText)
-                        .lineLimit(1)
-                    Text(movement.summary)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Theme.Color.tertiaryText)
-                        .lineLimit(1)
+    private func card(_ movement: Movement) -> some View {
+        Button {
+            withAnimation(Theme.Motion.content) { togglePin(movement) }
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                // The figure is fitted to the *smaller* side of its well, so a
+                // short wide well left a square pose scaled to the height and
+                // floating in empty space. A well close to the figure's own
+                // proportions, with almost no padding, is what makes it fill
+                // the card.
+                MovementGlyphView(
+                    movement: movement,
+                    tint: movement.isTrackingSupported
+                        ? Theme.Color.primaryText : Theme.Color.secondaryText,
+                    background: Theme.Color.elevated,
+                    weight: 4.6,
+                    padding: 3
+                )
+                .frame(maxWidth: .infinity)
+                .frame(height: 88)
+                .background(Theme.Color.elevated)
+                .overlay(alignment: .topLeading) {
+                    DifficultyPill(level: movement.difficulty)
+                        .scaleEffect(0.82)
+                        .padding(.leading, 2)
+                        .padding(.top, 2)
                 }
 
-                Spacer(minLength: 8)
-
-                Button { togglePin(movement) } label: {
-                    Image(systemName: isPinned(movement) ? "star.fill" : "star")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(isPinned(movement) ? Theme.Color.valid : Theme.Color.tertiaryText)
-                        .frame(width: 28, height: 28)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-
-                TrackingBadge(movement: movement)
-
-                if movement == selected {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(Theme.Color.valid)
-                } else {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.Color.secondaryText)
-                }
+                // No reserved second line: a row of cards already matches its
+                // tallest card, so reserving space only bought dead air under
+                // every short name.
+                Text(movement.displayName)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.Color.primaryText)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 6)
+                    .padding(.top, 5)
+                    .padding(.bottom, 6)
             }
-            .frame(height: 54)
+            .background(Theme.Color.card)
+            .clipShape(.rect(cornerRadius: Theme.Metric.cardRadius))
+            // The outline *is* the pinned state — the same set the bar at the
+            // top lists, so there's nothing extra to read.
+            .overlay {
+                RoundedRectangle(cornerRadius: Theme.Metric.cardRadius)
+                    .strokeBorder(isPinned(movement) ? Theme.Color.valid : .clear,
+                                  lineWidth: 1.5)
+            }
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
@@ -272,14 +378,6 @@ struct MovementLibraryView: View {
         .padding(.vertical, 40)
     }
 
-    private func choose(_ movement: Movement) {
-        guard entitlements.canTrack(movement) else {
-            showPaywall = true
-            return
-        }
-        selected = movement
-        dismiss()
-    }
 }
 
 // MARK: - Shared bits
@@ -308,21 +406,6 @@ struct DifficultyPill: View {
     }
 }
 
-/// Says plainly whether the camera can score this movement yet. With
-/// forty-three listed, that label is doing a lot of work.
-struct TrackingBadge: View {
-    let movement: Movement
-
-    var body: some View {
-        Text(movement.isTrackingSupported ? "TRACKED" : "SOON")
-            .font(.system(size: 9, weight: .semibold))
-            .tracking(Theme.Metric.labelTracking)
-            .foregroundStyle(movement.isTrackingSupported
-                             ? Theme.Color.valid : Theme.Color.tertiaryText)
-    }
-}
-
 #Preview {
-    MovementLibraryView(selected: .constant(.pushUps))
-        .environment(Entitlements())
+    MovementLibraryView()
 }
