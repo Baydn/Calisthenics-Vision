@@ -255,18 +255,20 @@ struct SessionReviewView: View {
                 // The player fits, so every overlay has to fit the same way or
                 // it drifts off the body.
                 //
-                // In the annotation modes the skeleton stays underneath at low
-                // presence: the line or the arc is the subject, and the rest of
-                // the body is what tells you where you're looking.
-                PoseOverlayView(
-                    pose: pose,
-                    isFormValid: true,
-                    isEngaged: session.movement.isInPosition(pose) ?? true,
-                    style: reviewStyle,
-                    sourceAspect: videoAspect,
-                    contentMode: .fit
-                )
-                .opacity(overlayMode == .skeleton ? 1 : 0.4)
+                // Line keeps the full skeleton — the reference line is read
+                // against the body, so the body has to be there. Angle drops
+                // it entirely: the whole point of that mode is one joint with
+                // nothing else competing for attention.
+                if overlayMode != .angle {
+                    PoseOverlayView(
+                        pose: pose,
+                        isFormValid: true,
+                        isEngaged: session.movement.isInPosition(pose) ?? true,
+                        style: reviewStyle,
+                        sourceAspect: videoAspect,
+                        contentMode: .fit
+                    )
+                }
 
                 PoseAnnotationView(
                     pose: pose,
@@ -419,6 +421,9 @@ struct SessionReviewView: View {
         case .skeleton:
             return "Every tracked joint, frame by frame."
         case .line:
+            if session.movement.holdsAVerticalLine {
+                return "Dashed is straight up from your hands — lean shows as the body drifting off it. Solid is the line you made; the gap between them is the bend."
+            }
             let chain = session.movement.alignmentChain
             let ends = [chain?.first, chain?.last].compactMap { $0?.shortName.lowercased() }
             let between = ends.count == 2 ? "from \(ends[0]) to \(ends[1])" : "through your body"

@@ -168,14 +168,37 @@ extension Movement {
     /// a piked handstand or a sagging push-up shows as the two lines parting.
     var alignmentChain: [PoseJoint]? {
         switch self {
-        case .handstand:
+        // Hands are part of the line when you're standing on them.
+        case .handstand, .handstandPushUp:
             [.leftWrist, .leftShoulder, .leftHip, .leftAnkle]
-        case .pushUps, .plank, .hollowBody, .planche, .frontLever, .backLever:
+        case .pushUps, .plank, .hollowBody, .planche, .frontLever, .backLever,
+             .elbowLever, .dip, .pullUps, .deadHang, .oneArmPullUp, .muscleUps:
             [.leftShoulder, .leftHip, .leftAnkle]
-        case .dip, .pullUps, .deadHang:
-            [.leftShoulder, .leftHip, .leftAnkle]
+        // An L-sit's legs are meant to be at ninety degrees to the torso, so
+        // there is no straight line to hold and nothing honest to draw.
         default:
             nil
+        }
+    }
+
+    /// Whether the line this movement holds is meant to be vertical.
+    ///
+    /// A handstand or a hang is judged against gravity — being straight but
+    /// leaning is still a fault, and only a vertical reference shows that.
+    /// A push-up's line is horizontal, so vertical would mean nothing there
+    /// and the reference is drawn end to end instead.
+    ///
+    /// "Vertical" here means vertical *in the picture*. Capture rotates with
+    /// the interface, so that matches gravity for a phone stood up or laid on
+    /// its side — which is every way you'd prop one to film this. A phone
+    /// tilted back leans the reference with it.
+    var holdsAVerticalLine: Bool {
+        switch self {
+        case .handstand, .handstandPushUp, .deadHang, .pullUps, .oneArmPullUp,
+             .muscleUps, .dip:
+            true
+        default:
+            false
         }
     }
 

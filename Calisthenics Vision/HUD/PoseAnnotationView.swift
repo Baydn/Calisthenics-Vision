@@ -64,13 +64,27 @@ struct PoseAnnotationView: View {
         let worst = worstBend(pose, joints)
         let tint = worst.map { bendColor($0.degrees) } ?? Theme.Color.primaryText
 
-        // The line you were aiming for: straight from one end of the chain to
-        // the other. Drawn between the ends rather than as a plumb line, so it
-        // means the same thing whatever angle the phone is at — a handstand
-        // filmed from in front is judged the same as one filmed side-on.
+        // The line you were aiming for.
+        //
+        // For anything held against gravity that's a plumb line through the
+        // base of support — your hands in a handstand, the bar in a hang.
+        // Straight but leaning is still a fault, and only a vertical
+        // reference shows it. For a push-up, whose line is horizontal, a
+        // vertical reference would mean nothing, so it runs end to end.
         var ideal = Path()
-        ideal.move(to: first)
-        ideal.addLine(to: last)
+        if movement.holdsAVerticalLine {
+            // Spans the body rather than stopping at the joints, so it reads
+            // as a reference line and not as another limb.
+            let ys = points.map(\.y)
+            let top = ys.min() ?? first.y
+            let bottom = ys.max() ?? first.y
+            let margin = (bottom - top) * 0.06
+            ideal.move(to: CGPoint(x: first.x, y: top - margin))
+            ideal.addLine(to: CGPoint(x: first.x, y: bottom + margin))
+        } else {
+            ideal.move(to: first)
+            ideal.addLine(to: last)
+        }
         context.stroke(
             ideal,
             with: .color(.black.opacity(0.45)),
