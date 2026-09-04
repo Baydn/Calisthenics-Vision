@@ -228,17 +228,22 @@ struct TrainIdleView: View {
     // MARK: - Pose handling
 
     private func handlePose(_ pose: Pose?, timestampMs: Int) {
+        // Telemetry is only worth keeping for a session being recorded — but
+        // it's worth keeping whether or not the movement has a tracker, so
+        // this sits above the guard. Landmarks are the one thing that can't
+        // be reconstructed afterwards, and Review draws its skeleton, its
+        // alignment line and its angles from them. Filming a muscle-up we
+        // can't count yet should still leave something to look at.
+        if phase == .recording, let pose {
+            telemetry?.append(timestampMs: timestampMs, values: Self.flatten(pose))
+        }
+
         // Trackers are value types, so mutate a local copy and write it back.
         guard var current = tracker else { return }
         let event = current.update(pose: pose, timestampMs: timestampMs)
         tracker = current
         progress = current.progress
         isInPosition = current.diagnostics.isReady
-
-        // Telemetry is only worth keeping for a session being recorded.
-        if phase == .recording, let pose {
-            telemetry?.append(timestampMs: timestampMs, values: Self.flatten(pose))
-        }
 
         switch event {
         case .repCompleted(let total):
