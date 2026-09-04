@@ -204,11 +204,10 @@ struct SessionReviewView: View {
 
     private var isCompactHeight: Bool { verticalSizeClass == .compact }
 
-    /// A portrait clip gets real height — the replay exists to show the whole
-    /// body, and 340pt of a 9:16 picture is a strip.
-    private var stageHeight: CGFloat {
-        if isCompactHeight { return 220 }
-        return videoAspect < 1 ? 480 : 300
+    /// Only a ceiling, so a very tall clip can't push the scrubber off the
+    /// screen entirely. Portrait video is meant to be tall here.
+    private var maxStageHeight: CGFloat {
+        isCompactHeight ? 240 : 720
     }
 
     private var videoStage: some View {
@@ -265,7 +264,14 @@ struct SessionReviewView: View {
                 .animation(.easeInOut(duration: 0.2), value: showsControls)
             }
         }
-        .frame(height: stageHeight)
+        // The stage takes the recording's own shape at full width, so the
+        // whole frame is on screen at its natural proportions with nothing
+        // to crop against and no bands to fill. Fixing the height and fitting
+        // inside it was the mistake: any height that isn't width ÷ aspect
+        // either crops or leaves bars, and I kept adjusting which.
+        .aspectRatio(videoAspect, contentMode: .fit)
+        .frame(maxWidth: .infinity)
+        .frame(maxHeight: maxStageHeight)
         .clipped()
         .contentShape(.rect)
         // Tapping the video is how people expect to pause. Without it the
