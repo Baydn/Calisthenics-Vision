@@ -70,7 +70,6 @@ enum Movement: String, CaseIterable, Identifiable, Hashable, Codable {
     case australianRow
     case negativePullUp
     case pullUps
-    case wideGripPullUp
     case lSitPullUp
     case muscleUps
     case oneArmPullUp
@@ -78,9 +77,7 @@ enum Movement: String, CaseIterable, Identifiable, Hashable, Codable {
     // Legs
     case wallSit
     case squat
-    case jumpSquat
     case lunge
-    case cossackSquat
     case bulgarianSplitSquat
     case shrimpSquat
     case pistolSquat
@@ -107,7 +104,6 @@ enum Movement: String, CaseIterable, Identifiable, Hashable, Codable {
     case elbowLever
     case handstand
     case pressToHandstand
-    case handstandWalk
 
     var id: String { rawValue }
 
@@ -124,15 +120,12 @@ enum Movement: String, CaseIterable, Identifiable, Hashable, Codable {
         case .australianRow:        "Australian Row"
         case .negativePullUp:       "Negative Pull-Up"
         case .pullUps:              "Pull-Up"
-        case .wideGripPullUp:       "Wide-Grip Pull-Up"
         case .lSitPullUp:           "L-Sit Pull-Up"
         case .muscleUps:            "Muscle-Up"
         case .oneArmPullUp:         "One-Arm Pull-Up"
         case .wallSit:              "Wall Sit"
         case .squat:                "Squat"
-        case .jumpSquat:            "Jump Squat"
         case .lunge:                "Lunge"
-        case .cossackSquat:         "Cossack Squat"
         case .bulgarianSplitSquat:  "Bulgarian Split Squat"
         case .shrimpSquat:          "Shrimp Squat"
         case .pistolSquat:          "Pistol Squat"
@@ -155,7 +148,6 @@ enum Movement: String, CaseIterable, Identifiable, Hashable, Codable {
         case .elbowLever:           "Elbow Lever"
         case .handstand:            "Handstand"
         case .pressToHandstand:     "Press to Handstand"
-        case .handstandWalk:        "Handstand Walk"
         }
     }
 
@@ -165,16 +157,16 @@ enum Movement: String, CaseIterable, Identifiable, Hashable, Codable {
              .handstandPushUp, .oneArmPushUp, .planchePushUp:
             .push
         case .deadHang, .australianRow, .negativePullUp, .pullUps,
-             .wideGripPullUp, .lSitPullUp, .muscleUps, .oneArmPullUp:
+             .lSitPullUp, .muscleUps, .oneArmPullUp:
             .pull
-        case .wallSit, .squat, .jumpSquat, .lunge, .cossackSquat,
+        case .wallSit, .squat, .lunge,
              .bulgarianSplitSquat, .shrimpSquat, .pistolSquat, .nordicCurl:
             .legs
         case .plank, .sitUp, .sidePlank, .hollowBody, .hangingKneeRaise, .lSit,
              .hangingLegRaise, .toesToBar, .vSit, .dragonFlag, .backLever,
              .frontLever, .humanFlag, .planche:
             .core
-        case .crowStand, .elbowLever, .handstand, .pressToHandstand, .handstandWalk:
+        case .crowStand, .elbowLever, .handstand, .pressToHandstand:
             .skill
         }
     }
@@ -186,17 +178,16 @@ enum Movement: String, CaseIterable, Identifiable, Hashable, Codable {
         switch self {
         case .plank, .deadHang:                             1
         case .wallSit, .sitUp, .squat, .australianRow:      2
-        case .pushUps, .jumpSquat, .lunge, .sidePlank,
+        case .pushUps, .lunge, .sidePlank,
              .hollowBody, .negativePullUp:                  3
         case .dip, .pullUps, .hangingKneeRaise, .crowStand: 4
-        case .pikePushUp, .wideGripPullUp, .cossackSquat,
+        case .pikePushUp,
              .bulgarianSplitSquat, .lSit, .hangingLegRaise: 5
         case .handstand, .toesToBar, .elbowLever:           6
         case .pseudoPlanchePushUp, .handstandPushUp, .muscleUps,
              .lSitPullUp, .shrimpSquat, .pistolSquat,
              .nordicCurl, .vSit:                            7
-        case .oneArmPushUp, .dragonFlag, .backLever,
-             .handstandWalk:                                8
+        case .oneArmPushUp, .dragonFlag, .backLever:        8
         case .frontLever, .humanFlag, .pressToHandstand:    9
         case .planchePushUp, .oneArmPullUp, .planche:       10
         }
@@ -214,7 +205,7 @@ enum Movement: String, CaseIterable, Identifiable, Hashable, Codable {
 
     var equipment: Equipment {
         switch self {
-        case .pullUps, .wideGripPullUp, .lSitPullUp, .muscleUps, .oneArmPullUp,
+        case .pullUps, .lSitPullUp, .muscleUps, .oneArmPullUp,
              .deadHang, .negativePullUp, .australianRow, .hangingKneeRaise,
              .hangingLegRaise, .toesToBar, .frontLever, .backLever, .humanFlag:
             .bar
@@ -251,7 +242,7 @@ enum Movement: String, CaseIterable, Identifiable, Hashable, Codable {
         switch self {
         case .handstand, .lSit, .planche, .plank, .sidePlank, .hollowBody,
              .vSit, .backLever, .frontLever, .humanFlag, .deadHang, .wallSit,
-             .crowStand, .elbowLever, .handstandWalk:
+             .crowStand, .elbowLever:
             true
         default:
             false
@@ -278,12 +269,12 @@ enum Movement: String, CaseIterable, Identifiable, Hashable, Codable {
         // Pull
         case .australianRow, .negativePullUp, .hangingKneeRaise: [.deadHang]
         case .pullUps:              [.negativePullUp, .australianRow]
-        case .wideGripPullUp, .muscleUps, .oneArmPullUp: [.pullUps]
+        case .muscleUps, .oneArmPullUp: [.pullUps]
         case .lSitPullUp:           [.pullUps, .lSit]
 
         // Legs
         case .squat:                [.wallSit]
-        case .jumpSquat, .lunge, .cossackSquat, .nordicCurl: [.squat]
+        case .lunge, .nordicCurl: [.squat]
         case .bulgarianSplitSquat:  [.lunge]
         case .shrimpSquat, .pistolSquat: [.bulgarianSplitSquat]
 
@@ -301,7 +292,7 @@ enum Movement: String, CaseIterable, Identifiable, Hashable, Codable {
         // Skill
         case .elbowLever:           [.crowStand]
         case .handstand:            [.crowStand]
-        case .pressToHandstand, .handstandWalk: [.handstand]
+        case .pressToHandstand: [.handstand]
 
         // Roots — nothing comes before these.
         case .pushUps, .deadHang, .wallSit, .plank, .sitUp, .crowStand: []
