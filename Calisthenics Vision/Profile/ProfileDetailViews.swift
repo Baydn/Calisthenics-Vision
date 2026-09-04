@@ -294,11 +294,14 @@ struct BestEffortsView: View {
                             Text(best(movement, mine))
                                 .font(.system(size: 16, weight: .bold, design: .monospaced))
                                 .foregroundStyle(Theme.Color.primaryText)
-                            if let when = mine.max(by: { $0.startedAt < $1.startedAt })?.startedAt {
-                                Text(when.formatted(.dateTime.month(.abbreviated).day()))
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(Theme.Color.tertiaryText)
-                            }
+                            // "24" alone doesn't say what it's the best OF —
+                            // a rep count and a hold time are both just
+                            // numbers until this says which. Folded in with
+                            // the date rather than a third line, so the row
+                            // stays the height it already was.
+                            Text(bestCaption(movement, mine))
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.Color.tertiaryText)
                         }
                     }
                     .frame(height: 56)
@@ -320,6 +323,14 @@ struct BestEffortsView: View {
         movement.isTimedHold
             ? SessionResult.durationLabel(mine.map(\.bestHold).max() ?? 0)
             : "\(mine.map(\.repCount).max() ?? 0)"
+    }
+
+    private func bestCaption(_ movement: Movement, _ mine: [WorkoutSession]) -> String {
+        let what = movement.isTimedHold ? "Longest hold" : "Best set"
+        guard let when = mine.max(by: { $0.startedAt < $1.startedAt })?.startedAt else {
+            return what
+        }
+        return "\(what) · \(when.formatted(.dateTime.month(.abbreviated).day()))"
     }
 }
 
