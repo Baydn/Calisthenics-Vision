@@ -83,6 +83,14 @@ final class AppSettings {
         didSet { defaults.set(overlayStyle.rawValue, forKey: Keys.overlayStyle) }
     }
 
+    /// Which overlay Session Review draws — the skeleton, the line you were
+    /// holding, or the angle the movement is judged at. Remembered because
+    /// it's a way of looking at your training, not a per-session decision:
+    /// someone working on their line wants the line every time.
+    var reviewOverlayMode: ReviewOverlayMode {
+        didSet { defaults.set(reviewOverlayMode.rawValue, forKey: Keys.reviewOverlay) }
+    }
+
     // MARK: - Movement tuning
 
     /// How deep a push-up has to go before it counts, as a share of the
@@ -156,6 +164,7 @@ final class AppSettings {
         static let repDepth = "settings.repDepth"
         static let pinnedMovements = "settings.pinnedMovements"
         static let overlayStyle = "settings.overlayStyle"
+        static let reviewOverlay = "settings.reviewOverlayMode"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -176,6 +185,8 @@ final class AppSettings {
             .flatMap(RepDepth.init(rawValue:)) ?? .standard
         overlayStyle = (defaults.string(forKey: Keys.overlayStyle))
             .flatMap(PoseOverlayStyle.init(rawValue:)) ?? .outline
+        reviewOverlayMode = (defaults.string(forKey: Keys.reviewOverlay))
+            .flatMap(ReviewOverlayMode.init(rawValue:)) ?? .skeleton
 
         if let stored = defaults.array(forKey: Keys.pinnedMovements) as? [String] {
             pinnedMovements = stored.compactMap(Movement.init(rawValue:))
@@ -194,7 +205,7 @@ final class AppSettings {
                     Keys.audioCoaching, Keys.speaksReps, Keys.speaksHoldTime,
                     Keys.speaksFormCues, Keys.speaksCountdown,
                     Keys.holdInterval, Keys.repDepth, Keys.pinnedMovements,
-                    Keys.overlayStyle] {
+                    Keys.overlayStyle, Keys.reviewOverlay] {
             defaults.removeObject(forKey: key)
         }
         countdownSeconds = 3
@@ -209,6 +220,7 @@ final class AppSettings {
         holdAnnounceInterval = 5
         repDepth = .standard
         overlayStyle = .outline
+        reviewOverlayMode = .skeleton
         pinnedMovements = Movement.allCases.filter(\.isTrackingSupported)
     }
     #endif

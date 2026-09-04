@@ -142,6 +142,43 @@ extension Movement {
 
     var isTrackingSupported: Bool { makeTracker() != nil }
 
+    /// The joint this movement is judged at, for the angle overlay: the
+    /// vertex and the two joints whose lines form it.
+    ///
+    /// Deliberately the same angle the tracker counts on and the same one the
+    /// chart plots — three views of one measurement. Left-side joints; the
+    /// overlay mirrors them to whichever side the camera can see.
+    var focusAngle: (vertex: PoseJoint, from: PoseJoint, to: PoseJoint, label: String)? {
+        switch self {
+        case .handstand:
+            (.leftShoulder, .leftWrist, .leftHip, "Shoulder")
+        case .pushUps, .dip, .pullUps:
+            (.leftElbow, .leftShoulder, .leftWrist, "Elbow")
+        case .squat:
+            (.leftKnee, .leftHip, .leftAnkle, "Knee")
+        default:
+            nil
+        }
+    }
+
+    /// Joints that should form one straight line, in order.
+    ///
+    /// The alignment overlay draws the straight line between the ends and the
+    /// real path through the middle, so the gap between them *is* the fault —
+    /// a piked handstand or a sagging push-up shows as the two lines parting.
+    var alignmentChain: [PoseJoint]? {
+        switch self {
+        case .handstand:
+            [.leftWrist, .leftShoulder, .leftHip, .leftAnkle]
+        case .pushUps, .plank, .hollowBody, .planche, .frontLever, .backLever:
+            [.leftShoulder, .leftHip, .leftAnkle]
+        case .dip, .pullUps, .deadHang:
+            [.leftShoulder, .leftHip, .leftAnkle]
+        default:
+            nil
+        }
+    }
+
     /// Whether a pose is in the position this movement is judged from, with
     /// no tracker state involved.
     ///

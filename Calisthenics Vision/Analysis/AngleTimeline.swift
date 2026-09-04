@@ -174,23 +174,7 @@ enum AngleBands {
         return result
     }
 
-    static func mirrored(_ joint: PoseJoint) -> PoseJoint {
-        switch joint {
-        case .leftShoulder:  .rightShoulder
-        case .rightShoulder: .leftShoulder
-        case .leftElbow:     .rightElbow
-        case .rightElbow:    .leftElbow
-        case .leftWrist:     .rightWrist
-        case .rightWrist:    .leftWrist
-        case .leftHip:       .rightHip
-        case .rightHip:      .leftHip
-        case .leftKnee:      .rightKnee
-        case .rightKnee:     .leftKnee
-        case .leftAnkle:     .rightAnkle
-        case .rightAnkle:    .leftAnkle
-        case .nose:          .nose
-        }
-    }
+    static func mirrored(_ joint: PoseJoint) -> PoseJoint { joint.mirrored }
 
     /// Assembles a timeline, or nil if the window turned out to hold too
     /// little to plot.
@@ -231,6 +215,30 @@ enum AngleBands {
 
     // MARK: - Holds
 
+    /// The bands a handstand's shoulder angle is read against.
+    static let handstandShoulderZones = [
+        AngleZone(name: "Stacked", lower: 165, upper: 180, tone: .good),
+        AngleZone(name: "Open", lower: 140, upper: 165, tone: .fair),
+        AngleZone(name: "Piked", lower: 0, upper: 140, tone: .poor),
+    ]
+
+    /// …and its hip angle.
+    static let handstandHipZones = [
+        AngleZone(name: "Straight", lower: 168, upper: 180, tone: .good),
+        AngleZone(name: "Soft", lower: 150, upper: 168, tone: .fair),
+        AngleZone(name: "Piked", lower: 0, upper: 150, tone: .poor),
+    ]
+
+    /// Bands for the angle a movement is judged at, where that angle is
+    /// graded against geometry rather than against your own range.
+    ///
+    /// Nil for rep movements on purpose: the overlay would have to invent a
+    /// fixed threshold to colour a push-up's elbow, and fixed thresholds are
+    /// what POSE.md Law 3 exists to keep out. Those are drawn white.
+    static func focusZones(for movement: Movement) -> [AngleZone]? {
+        movement == .handstand ? handstandShoulderZones : nil
+    }
+
     /// The two angles a handstand is judged on, over one hold.
     static func handstandTimelines(
         shoulder: [(Int, Double)], hip: [(Int, Double)], subtitle: String?
@@ -248,11 +256,7 @@ enum AngleBands {
             work your skeleton should be doing.
             """,
             points: shoulder,
-            zones: [
-                AngleZone(name: "Stacked", lower: 165, upper: 180, tone: .good),
-                AngleZone(name: "Open", lower: 140, upper: 165, tone: .fair),
-                AngleZone(name: "Piked", lower: 0, upper: 140, tone: .poor),
-            ],
+            zones: handstandShoulderZones,
             displayRange: displayRange(for: shoulder, floor: 110, ceiling: 180)
         ) {
             result.append(timeline)
@@ -268,11 +272,7 @@ enum AngleBands {
             with shoulder mobility.
             """,
             points: hip,
-            zones: [
-                AngleZone(name: "Straight", lower: 168, upper: 180, tone: .good),
-                AngleZone(name: "Soft", lower: 150, upper: 168, tone: .fair),
-                AngleZone(name: "Piked", lower: 0, upper: 150, tone: .poor),
-            ],
+            zones: handstandHipZones,
             displayRange: displayRange(for: hip, floor: 120, ceiling: 180)
         ) {
             result.append(timeline)

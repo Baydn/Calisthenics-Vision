@@ -36,7 +36,6 @@ struct SessionReviewView: View {
     @State private var currentTime: TimeInterval = 0
     @State private var duration: TimeInterval = 0
     @State private var isPlaying = false
-    @State private var showsSkeleton = true
     @State private var isScrubbing = false
     @State private var timeObserver: Any?
     /// Width ÷ height of the recording, so the overlay lands on the body.
@@ -65,11 +64,21 @@ struct SessionReviewView: View {
         )
     }
 
-    /// The chosen style, except that "off" is the switch above the video's
-    /// job here — a toggle that turns on an invisible skeleton would be a
-    /// control that does nothing.
+    /// The chosen style, except that hiding the skeleton is the mode
+    /// picker's job here — "Off" is one of the modes.
     private var reviewStyle: PoseOverlayStyle {
         settings.overlayStyle == .off ? .outline : settings.overlayStyle
+    }
+
+    /// Modes this movement actually has something to draw for.
+    private var overlayModes: [ReviewOverlayMode] {
+        ReviewOverlayMode.available(for: session.movement)
+    }
+
+    /// The chosen mode, falling back when it isn't offered for this movement —
+    /// picking "Angle" on a handstand shouldn't leave a muscle-up blank.
+    private var overlayMode: ReviewOverlayMode {
+        overlayModes.contains(settings.reviewOverlayMode) ? settings.reviewOverlayMode : .skeleton
     }
 
     enum MarkerKind {
@@ -123,6 +132,9 @@ struct SessionReviewView: View {
                         scrubber
                             .padding(.horizontal, Theme.Metric.screenPadding)
                             .padding(.top, 18)
+                        overlayPicker
+                            .padding(.horizontal, Theme.Metric.screenPadding)
+                            .padding(.top, 20)
                         jointAngles
                             .padding(.horizontal, Theme.Metric.screenPadding)
                             .padding(.top, 26)
@@ -188,13 +200,6 @@ struct SessionReviewView: View {
 
             Spacer()
 
-            // Only meaningful when there's telemetry to draw.
-            if reader != nil {
-                Toggle("", isOn: $showsSkeleton)
-                    .labelsHidden()
-                    .tint(Theme.Color.valid)
-            }
-
             Menu {
                 Button("Delete Session", role: .destructive) {
                     showDeleteConfirmation = true
@@ -246,14 +251,27 @@ struct SessionReviewView: View {
                 VideoPlayerLayer(player: player)
             }
 
-            if showsSkeleton, let pose = poseAtCurrentTime {
-                // The player fits, so the overlay has to fit the same way or
-                // the skeleton drifts off the body.
+            if overlayMode != .off, let pose = poseAtCurrentTime {
+                // The player fits, so every overlay has to fit the same way or
+                // it drifts off the body.
+                //
+                // In the annotation modes the skeleton stays underneath at low
+                // presence: the line or the arc is the subject, and the rest of
+                // the body is what tells you where you're looking.
                 PoseOverlayView(
                     pose: pose,
                     isFormValid: true,
                     isEngaged: session.movement.isInPosition(pose) ?? true,
                     style: reviewStyle,
+                    sourceAspect: videoAspect,
+                    contentMode: .fit
+                )
+                .opacity(overlayMode == .skeleton ? 1 : 0.4)
+
+                PoseAnnotationView(
+                    pose: pose,
+                    movement: session.movement,
+                    mode: overlayMode,
                     sourceAspect: videoAspect,
                     contentMode: .fit
                 )
@@ -368,6 +386,47 @@ struct SessionReviewView: View {
             }
             .font(.system(size: 12, weight: .medium, design: .monospaced))
             .foregroundStyle(Theme.Color.secondaryText)
+        }
+    }
+
+    /// How to look at the frame on screen.
+    ///
+    /// Only shown when there's telemetry behind it — with no landmarks logged
+    /// there is nothing for any of these modes to draw, and offering the
+    /// choice would be offering nothing.
+    @ViewBuilder
+    private var overlayPicker: some View {
+        if reader != nil {
+            VStack(alignment: .leading, spacing: 8) {
+                SegmentedControl(
+                    segments: overlayModes,
+                    title: \.title,
+                    selection: Binding(
+                        get: { overlayMode },
+                        set: { settings.reviewOverlayMode = $0 }
+                    )
+                )
+                Text(overlayHint)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.Color.tertiaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var overlayHint: String {
+        switch overlayMode {
+        case .skeleton:
+            return "Every tracked joint, frame by frame."
+        case .line:
+            let chain = session.movement.alignmentChain
+            let ends = [chain?.first, chain?.last].compactMap { $0?.shortName.lowercased() }
+            let between = ends.count == 2 ? "from \(ends[0]) to \(ends[1])" : "through your body"
+            return "Dashed is the straight line \(between); solid is the line you made. The gap between them is the bend."
+        case .angle:
+            return "The joint this movement is judged at. The arc is what the camera saw; the number is measured in 3D, so it stays right even filmed head-on."
+        case .off:
+            return "Just the recording."
         }
     }
 

@@ -25,6 +25,31 @@ enum PoseJoint: Int, CaseIterable {
     case leftAnkle = 27, rightAnkle = 28
 }
 
+extension PoseJoint {
+    /// The same joint on the other side of the body.
+    ///
+    /// Every measurement here has a left and a right, and which one is worth
+    /// using depends on where the camera is standing — so the mirror is part
+    /// of the topology rather than something each caller re-derives.
+    var mirrored: PoseJoint {
+        switch self {
+        case .nose: .nose
+        case .leftShoulder: .rightShoulder
+        case .rightShoulder: .leftShoulder
+        case .leftElbow: .rightElbow
+        case .rightElbow: .leftElbow
+        case .leftWrist: .rightWrist
+        case .rightWrist: .leftWrist
+        case .leftHip: .rightHip
+        case .rightHip: .leftHip
+        case .leftKnee: .rightKnee
+        case .rightKnee: .leftKnee
+        case .leftAnkle: .rightAnkle
+        case .rightAnkle: .leftAnkle
+        }
+    }
+}
+
 /// One detected pose: normalized (0…1) points in image space.
 struct Pose {
     /// 33 points, indexed by `PoseJoint`.
