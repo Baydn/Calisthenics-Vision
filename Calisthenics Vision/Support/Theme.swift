@@ -99,9 +99,6 @@ enum Theme {
         /// The bar now sits inside the home-indicator inset, so screens have
         /// to clear the indicator as well as the bar itself.
         static let tabBarClearance: CGFloat = 100
-        /// Bottom inset that puts a 36pt control on the tab bar's centre line,
-        /// so controls parked beside the bar line up with it.
-        static let tabBarInset: CGFloat = 17
         static let labelTracking: CGFloat = 0.5
     }
 }

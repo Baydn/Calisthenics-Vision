@@ -61,7 +61,8 @@ struct TrainIdleView: View {
     /// Quick-pick movements; the rest live behind "+ Library".
     /// Only movements that are actually tracked. An untracked movement in the
     /// quick row is a promise the app can't keep; the rest live in Library.
-    private let quickPicks: [Movement] = [.pushUps, .pullUps, .squat, .dip, .handstand]
+    /// Chosen from the library, not hardcoded — see AppSettings.pinnedMovements.
+    private var quickPicks: [Movement] { settings.pinnedMovements }
 
     /// 20 Hz, so the hundredths on the elapsed clock actually move. The hold
     /// clock is driven by pose frames instead and updates with them.
@@ -145,32 +146,29 @@ struct TrainIdleView: View {
                 .padding(.bottom, Theme.Metric.tabBarClearance + 8)
             }
 
-            // Coaching and tuning are side features and live on the edge,
-            // out of the way of the shutter.
-            // Held clear of the flip button below it — at the vertical centre
-            // these collided on shorter screens.
+            // Flip, coaching and tuning are all side features and live together
+            // on the trailing edge, above centre.
+            //
+            // Flip used to sit on its own near the tab bar, which put it
+            // right where the bar's own height changes push things around,
+            // and forced the timer/tune column into an awkward "stay clear
+            // of it" offset. One column fixes both: flip has a stable spot
+            // that isn't fighting the chrome below it, and the workaround
+            // padding goes with it.
             //
             // Trailing-aligned so the timer can widen when it opens without
-            // shoving the button below it sideways.
+            // shoving the buttons below it sideways.
             HStack {
                 Spacer()
                 VStack(alignment: .trailing, spacing: 12) {
+                    flipCameraButton
                     timerButton
                     tuneButton
                 }
                 .padding(.trailing, 18)
             }
             .frame(maxHeight: .infinity, alignment: .center)
-            .padding(.bottom, Theme.Metric.tabBarClearance + 120)
-
-            // Flip lines up with the tab bar rather than floating over the
-            // preview: it's a mode switch, not part of taking the shot.
-            HStack {
-                Spacer()
-                flipCameraButton
-            }
-            .padding(.trailing, 18)
-            .padding(.bottom, Theme.Metric.tabBarInset)
+            .padding(.bottom, 80)
         }
     }
 
@@ -192,9 +190,12 @@ struct TrainIdleView: View {
                 Spacer(minLength: 0)
             }
 
+            // Same fold-in as portrait: flip lives with the rest of the
+            // trailing-edge controls instead of pinned near the tab bar.
             HStack {
                 Spacer()
                 VStack(alignment: .trailing, spacing: 12) {
+                    flipCameraButton
                     timerButton
                     tuneButton
                     lensButton
@@ -203,14 +204,6 @@ struct TrainIdleView: View {
                 }
                 .padding(.trailing, 18)
             }
-
-            HStack {
-                Spacer()
-                flipCameraButton
-            }
-            .frame(maxHeight: .infinity, alignment: .bottom)
-            .padding(.trailing, 18)
-            .padding(.bottom, Theme.Metric.tabBarInset)
         }
     }
 

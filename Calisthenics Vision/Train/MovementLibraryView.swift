@@ -13,6 +13,10 @@
 //  "not tracked yet". Hiding them would make the library lie about where the
 //  app is going, and picking one still lets you record the set.
 //
+//  Which movements show as one-tap chips on Train is a choice made here, not
+//  a fixed list — tap the star. Quick Picks sits pinned at the top so
+//  choosing is a couple of taps rather than a hunt.
+//
 
 import SwiftUI
 
@@ -22,6 +26,7 @@ struct MovementLibraryView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(Entitlements.self) private var entitlements
 
+    @State private var settings = AppSettings.shared
     @State private var search = ""
     @State private var equipment: Equipment?
     @State private var detail: Movement?
@@ -55,6 +60,11 @@ struct MovementLibraryView: View {
                     equipmentRow
                         .padding(.bottom, 26)
 
+                    if !settings.pinnedMovements.isEmpty {
+                        quickPicksSection
+                            .padding(.bottom, 26)
+                    }
+
                     if matches.isEmpty {
                         emptyState
                     } else {
@@ -85,6 +95,48 @@ struct MovementLibraryView: View {
         }
         .preferredColorScheme(.dark)
         .sheet(isPresented: $showPaywall) { PaywallView() }
+    }
+
+    // MARK: - Quick picks
+
+    private var quickPicksSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("QUICK PICKS").sectionHeaderStyle()
+                Spacer()
+                Text("SHOWN ON TRAIN").cardLabelStyle()
+            }
+            .padding(.horizontal, Theme.Metric.screenPadding)
+
+            VStack(spacing: 0) {
+                ForEach(Array(settings.pinnedMovements.enumerated()), id: \.element.id) { index, movement in
+                    row(movement)
+                    if index < settings.pinnedMovements.count - 1 {
+                        Rectangle()
+                            .fill(Theme.Color.rowSeparator)
+                            .frame(height: 1)
+                            .padding(.leading, 34)
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .background(Theme.Color.card, in: .rect(cornerRadius: Theme.Metric.cardRadius))
+            .padding(.horizontal, Theme.Metric.screenPadding)
+        }
+    }
+
+    private func isPinned(_ movement: Movement) -> Bool {
+        settings.pinnedMovements.contains(movement)
+    }
+
+    private func togglePin(_ movement: Movement) {
+        withAnimation(Theme.Motion.content) {
+            if let index = settings.pinnedMovements.firstIndex(of: movement) {
+                settings.pinnedMovements.remove(at: index)
+            } else {
+                settings.pinnedMovements.append(movement)
+            }
+        }
     }
 
     // MARK: - Pieces
@@ -179,6 +231,15 @@ struct MovementLibraryView: View {
                 }
 
                 Spacer(minLength: 8)
+
+                Button { togglePin(movement) } label: {
+                    Image(systemName: isPinned(movement) ? "star.fill" : "star")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(isPinned(movement) ? Theme.Color.valid : Theme.Color.tertiaryText)
+                        .frame(width: 28, height: 28)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
 
                 TrackingBadge(movement: movement)
 

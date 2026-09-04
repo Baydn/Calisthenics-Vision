@@ -197,15 +197,24 @@ struct HistoryProgressView: View {
 
     // MARK: - Controls
 
+    /// Scrolls rather than wrapping or shrinking to fit — with five movements
+    /// now (and more to come), an unscrollable row either overflows the
+    /// screen width or has to squeeze each chip down to nothing. Five chips
+    /// was the point this broke: a plain HStack has no ceiling, so it
+    /// stretched the whole screen out with it.
     private var filterRow: some View {
-        HStack(spacing: 8) {
-            ForEach(filterOptions, id: \.self) { option in
-                FilterChip(title: option.displayName, isActive: option == filter) {
-                    withAnimation(.snappy(duration: 0.2)) { filter = option }
+        ScrollView(.horizontal) {
+            HStack(spacing: 8) {
+                ForEach(filterOptions, id: \.self) { option in
+                    FilterChip(title: option.displayName, isActive: option == filter) {
+                        withAnimation(Theme.Motion.selection) { filter = option }
+                    }
                 }
             }
-            Spacer(minLength: 0)
+            .padding(.horizontal, Theme.Metric.screenPadding)
         }
+        .scrollIndicators(.hidden)
+        .padding(.horizontal, -Theme.Metric.screenPadding)
     }
 
     private var trendTitle: String {

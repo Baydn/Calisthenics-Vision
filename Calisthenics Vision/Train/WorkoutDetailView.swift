@@ -47,6 +47,13 @@ struct WorkoutDetailView: View {
         .background(Theme.Color.background)
         .navigationTitle(workout.name)
         .navigationBarTitleDisplayMode(.inline)
+        // Registered here rather than relying on an ancestor: WorkoutDetailView
+        // is reachable through at least two separate NavigationStacks (You's
+        // own, and Home's — Profile can be reached from either), and only
+        // one of them registered this destination. A tap that resolves
+        // depending on which screen you came from is a bug that's invisible
+        // from one path and broken from the other; self-contained is the fix.
+        .navigationDestination(for: WorkoutSession.self) { SessionReviewView(session: $0) }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {

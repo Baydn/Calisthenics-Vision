@@ -113,6 +113,18 @@ final class AppSettings {
         didSet { defaults.set(repDepth.rawValue, forKey: Keys.repDepth) }
     }
 
+    // MARK: - Train quick picks
+
+    /// Which movements show as one-tap chips on Train, in the order chosen.
+    /// Chosen from the library rather than hardcoded, because the library
+    /// only grows — a fixed list stops being "the ones you actually use"
+    /// the moment a new tracker ships.
+    var pinnedMovements: [Movement] {
+        didSet {
+            defaults.set(pinnedMovements.map(\.rawValue), forKey: Keys.pinnedMovements)
+        }
+    }
+
     /// Always opens on the front camera: while setting up you're looking at
     /// the phone, and seeing your own skeleton is how you know it's working.
     /// Flipping is a control on the Train screen, not a stored preference.
@@ -132,6 +144,7 @@ final class AppSettings {
         static let speaksCountdown = "settings.speaksCountdown"
         static let holdInterval = "settings.holdAnnounceInterval"
         static let repDepth = "settings.repDepth"
+        static let pinnedMovements = "settings.pinnedMovements"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -150,6 +163,15 @@ final class AppSettings {
         holdAnnounceInterval = defaults.object(forKey: Keys.holdInterval) as? Int ?? 5
         repDepth = (defaults.string(forKey: Keys.repDepth))
             .flatMap(RepDepth.init(rawValue:)) ?? .standard
+
+        if let stored = defaults.array(forKey: Keys.pinnedMovements) as? [String] {
+            pinnedMovements = stored.compactMap(Movement.init(rawValue:))
+        } else {
+            // First run: every movement that already has a real tracker.
+            // Once pinning is used at all, the user's own choice takes over
+            // completely rather than merging with this default.
+            pinnedMovements = Movement.allCases.filter(\.isTrackingSupported)
+        }
     }
 
     #if DEBUG
@@ -158,7 +180,7 @@ final class AppSettings {
                     Keys.haptics, Keys.screenAwake, Keys.recordsVideo,
                     Keys.audioCoaching, Keys.speaksReps, Keys.speaksHoldTime,
                     Keys.speaksFormCues, Keys.speaksCountdown,
-                    Keys.holdInterval, Keys.repDepth] {
+                    Keys.holdInterval, Keys.repDepth, Keys.pinnedMovements] {
             defaults.removeObject(forKey: key)
         }
         countdownSeconds = 3
@@ -172,6 +194,7 @@ final class AppSettings {
         speaksCountdown = true
         holdAnnounceInterval = 5
         repDepth = .standard
+        pinnedMovements = Movement.allCases.filter(\.isTrackingSupported)
     }
     #endif
 }
