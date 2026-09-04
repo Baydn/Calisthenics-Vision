@@ -26,8 +26,13 @@ struct SessionReviewView: View {
     /// would leave no room for anything underneath it.
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
+    @State private var settings = AppSettings.shared
     @State private var player: AVPlayer?
     @State private var reader: TelemetryReader?
+    /// The set's defining angle(s) over time. Built once when the screen
+    /// loads — it's a full pass over the telemetry, not something to redo
+    /// on every scrub.
+    @State private var timelines: [AngleTimeline] = []
     @State private var currentTime: TimeInterval = 0
     @State private var duration: TimeInterval = 0
     @State private var isPlaying = false
@@ -58,6 +63,13 @@ struct SessionReviewView: View {
             aspect: videoAspect,
             worldPoints: frame.worldPoints
         )
+    }
+
+    /// The chosen style, except that "off" is the switch above the video's
+    /// job here — a toggle that turns on an invisible skeleton would be a
+    /// control that does nothing.
+    private var reviewStyle: PoseOverlayStyle {
+        settings.overlayStyle == .off ? .outline : settings.overlayStyle
     }
 
     enum MarkerKind {
@@ -114,6 +126,8 @@ struct SessionReviewView: View {
                         jointAngles
                             .padding(.horizontal, Theme.Metric.screenPadding)
                             .padding(.top, 26)
+                        angleCharts
+                            .padding(.horizontal, Theme.Metric.screenPadding)
                         holdBreakdown
                         summary
                             .padding(.top, 22)
@@ -238,6 +252,8 @@ struct SessionReviewView: View {
                 PoseOverlayView(
                     pose: pose,
                     isFormValid: true,
+                    isEngaged: session.movement.isInPosition(pose) ?? true,
+                    style: reviewStyle,
                     sourceAspect: videoAspect,
                     contentMode: .fit
                 )
@@ -393,6 +409,33 @@ struct SessionReviewView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// The movement's own angle, banded and plotted, with the playhead on it.
+    ///
+    /// Wired to the player both ways: it marks where you are, and dragging
+    /// across it seeks. That's what makes this different from a chart you
+    /// can only look at — you can see the shoulder open at six seconds and
+    /// then go and watch it happen.
+    @ViewBuilder
+    private var angleCharts: some View {
+        if !timelines.isEmpty {
+            VStack(spacing: 14) {
+                ForEach(timelines) { timeline in
+                    AngleChartCard(
+                        timeline: timeline,
+                        playheadMs: (session.videoStartMs ?? 0) + Int(currentTime * 1000),
+                        onSeek: { ms in
+                            guard let f = fraction(of: ms) else { return }
+                            isScrubbing = true
+                            seek(to: f * duration)
+                            isScrubbing = false
+                        }
+                    )
+                }
+            }
+            .padding(.top, 22)
+        }
+    }
+
     /// Each hold in the set, tappable to jump straight to it.
     ///
     /// A set of six attempts is six separate things to look at, and the
@@ -467,6 +510,7 @@ struct SessionReviewView: View {
             reader = TelemetryReader(
                 url: MediaLibrary.telemetryDirectory.appending(path: name)
             )
+            timelines = AngleTimelineBuilder.timelines(for: session)
         }
 
         guard let url = session.videoURL,

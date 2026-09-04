@@ -25,6 +25,12 @@ struct SetSummaryView: View {
     @Query private var allSessions: [WorkoutSession]
     @State private var showComposer = false
     @State private var openReviewAt: SeekTarget?
+    /// A pass over the telemetry, so it's built once on appear rather than
+    /// on every redraw.
+    @State private var timelines: [AngleTimeline] = []
+    /// Set once the pass has run, so "nothing to show" is only said after
+    /// looking rather than during the first frame.
+    @State private var didAnalyze = false
 
     private var analysis: SessionAnalysis? { SessionAnalyzer.analyze(session) }
 
@@ -46,24 +52,36 @@ struct SetSummaryView: View {
                         .padding(.bottom, 28)
                 }
 
-                if let analysis {
-                    if !analysis.metrics.isEmpty {
-                        Text("HOW IT WENT")
-                            .sectionHeaderStyle()
-                            .padding(.bottom, 10)
+                if let analysis, !analysis.metrics.isEmpty {
+                    Text("HOW IT WENT")
+                        .sectionHeaderStyle()
+                        .padding(.bottom, 10)
 
-                        metrics(analysis.metrics)
-                            .padding(.bottom, 26)
+                    metrics(analysis.metrics)
+                        .padding(.bottom, 26)
+                }
+
+                // Charts stand on their own: a single-rep set has nothing to
+                // compare across reps, so `analysis` is nil, but the angle it
+                // moved through is still there and still worth seeing.
+                if !timelines.isEmpty {
+                    VStack(spacing: 14) {
+                        ForEach(timelines) { timeline in
+                            AngleChartCard(timeline: timeline)
+                        }
                     }
+                    .padding(.bottom, 26)
+                }
 
-                    if !analysis.takeaways.isEmpty {
-                        Text("TAKEAWAYS")
-                            .sectionHeaderStyle()
-                            .padding(.bottom, 10)
+                if let analysis, !analysis.takeaways.isEmpty {
+                    Text("TAKEAWAYS")
+                        .sectionHeaderStyle()
+                        .padding(.bottom, 10)
 
-                        takeaways(analysis.takeaways)
-                    }
-                } else {
+                    takeaways(analysis.takeaways)
+                }
+
+                if didAnalyze, analysis == nil, timelines.isEmpty {
                     Text("Not enough recorded telemetry to say anything about this set — turn on \"Record video\" in Settings to get this next time.")
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.Color.tertiaryText)
@@ -76,6 +94,10 @@ struct SetSummaryView: View {
         }
         .scrollIndicators(.hidden)
         .background(Theme.Color.background)
+        .task {
+            timelines = AngleTimelineBuilder.timelines(for: session)
+            didAnalyze = true
+        }
         .safeAreaInset(edge: .bottom) {
             HStack(spacing: 10) {
                 Button { showComposer = true } label: {

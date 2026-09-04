@@ -155,6 +155,19 @@ struct TelemetryReader {
         return TelemetryFrame(timestampMs: timestamp, values: values)
     }
 
+    /// Just the timestamp of a frame, without parsing its 165 values.
+    ///
+    /// Analysis that only wants a window out of a long recording would
+    /// otherwise decode every frame in the file to find out which ones to
+    /// throw away.
+    func timestampMs(at index: Int) -> Int32? {
+        guard index >= 0, index < frameCount else { return nil }
+        let start = Telemetry.headerSize + index * Telemetry.frameSize
+        return data.withUnsafeBytes { raw in
+            raw.loadUnaligned(fromByteOffset: start, as: Int32.self).littleEndian
+        }
+    }
+
     /// Nearest frame at or before `timestampMs`. Binary search, since frames
     /// are written in capture order.
     func frame(nearest timestampMs: Int32) -> TelemetryFrame? {

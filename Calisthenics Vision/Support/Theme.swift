@@ -41,6 +41,11 @@ enum Theme {
 
         static let valid = SwiftUI.Color(red: 0, green: 1, blue: 0.4)                   // #00FF66
         static let warning = SwiftUI.Color(red: 1, green: 0.2, blue: 0.4)               // #FF3366
+        /// The middle of a graded measurement — a joint that's neither in the
+        /// range you're aiming for nor far enough out to call a fault. Only
+        /// for zones on an angle chart, where a three-step scale is the whole
+        /// point; it is not a third app-state colour.
+        static let caution = SwiftUI.Color(red: 1, green: 0.79, blue: 0.24)             // #FFCA3D
     }
 
     // MARK: - Typography

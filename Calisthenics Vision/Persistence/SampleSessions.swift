@@ -82,7 +82,13 @@ enum SampleSessions {
         let descriptor = FetchDescriptor<WorkoutSession>()
         guard let existing = try? context.fetchCount(descriptor), existing == 0 else { return }
 
-        for session in make() { context.insert(session) }
+        for session in make() {
+            context.insert(session)
+            // Without this every analysis screen reads "not enough recorded
+            // telemetry" in the Simulator, which is most of what there is to
+            // look at on a seeded install.
+            SampleTelemetry.attach(to: session)
+        }
         try? context.save()
     }
     #endif
