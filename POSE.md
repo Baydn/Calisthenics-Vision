@@ -442,6 +442,7 @@ Every rule above, and the bug that earned it.
 | Review skeleton drawn nowhere near the body | World metres rendered as image fractions | Law 1 |
 | Replay stretched | Writer sized from the sensor's landscape format while the connection was rotated to portrait | — (`VideoRecorder` sizes from the first real frame) |
 | Preview sideways in portrait, upside down in landscape | `RotationCoordinator` built with `previewLayer: nil` returns 0° forever — the native sensor orientation, which is landscape | — (rotation follows the *interface*; see `CameraController.rotationAngle(for:)`) |
+| Preview showing less than was recorded | The live preview filled (`.resizeAspectFill`), cropping the sides of a 9:16 capture on a taller screen — you framed yourself against a narrower picture than the one being saved | — (preview fits; overlay must use the same mode) |
 | Skeleton beside the body in landscape | Overlay assumed a 9:16 source while the data output emits physically rotated 16:9 buffers | Law 1 (draw in the space the frames are actually in) |
 | SIGSEGV on the first device build | Main-actor state read from the capture queue | `CLAUDE.md` concurrency invariant |
 | Random crash when switching tabs | The Train screen owned the capture stack, so every tab switch tore down an `AVCaptureSession` and a MediaPipe graph; `AVCaptureVideoDataOutput` doesn't retain its delegate, so a frame landed on freed memory | — (`CaptureStack`, owned above the tab bar) |

@@ -204,6 +204,14 @@ struct SessionReviewView: View {
 
     private var isCompactHeight: Bool { verticalSizeClass == .compact }
 
+    /// Sized from the recording's own shape rather than a fixed number: a
+    /// portrait clip letterboxed into a squat box wastes most of the screen,
+    /// and seeing the whole body is the point of the replay.
+    private var stageHeight: CGFloat {
+        if isCompactHeight { return 220 }
+        return videoAspect < 1 ? 460 : 300
+    }
+
     private var videoStage: some View {
         ZStack {
             // Black rather than card grey, so the letterbox reads as part of
@@ -258,7 +266,7 @@ struct SessionReviewView: View {
                 .animation(.easeInOut(duration: 0.2), value: showsControls)
             }
         }
-        .frame(height: isCompactHeight ? 200 : 340)
+        .frame(height: stageHeight)
         .clipped()
         .contentShape(.rect)
         // Tapping the video is how people expect to pause. Without it the

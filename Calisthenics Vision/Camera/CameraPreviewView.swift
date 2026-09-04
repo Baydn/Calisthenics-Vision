@@ -24,7 +24,15 @@ struct CameraPreviewView: UIViewRepresentable {
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
         view.previewLayer.session = session
-        view.previewLayer.videoGravity = .resizeAspectFill
+        // Fit, not fill.
+        //
+        // The capture is 9:16 and the screen is taller than that, so filling
+        // cropped the sides — you were framing yourself against a picture
+        // narrower than the one being recorded, and couldn't tell whether
+        // your hands or feet had made it in. For an app whose whole job is
+        // seeing your whole body, showing less than it captures is the wrong
+        // trade; letterboxing is the honest one.
+        view.previewLayer.videoGravity = .resizeAspect
         view.onRotationChange = onRotationChange
         return view
     }

@@ -407,10 +407,14 @@ struct TrainIdleView: View {
                 // overlay has to use the pose's own aspect rather than
                 // assuming portrait — otherwise the skeleton lands beside
                 // the body in landscape.
+                // Must match the preview's gravity or the skeleton drifts
+                // off the body — the overlay maps normalized landmarks into
+                // whatever box the video is actually drawn in.
                 PoseOverlayView(
                     pose: poseSession.pose,
                     isFormValid: progress.isFormValid,
-                    sourceAspect: poseSession.pose?.aspect ?? 9.0 / 16.0
+                    sourceAspect: poseSession.pose?.aspect ?? 9.0 / 16.0,
+                    contentMode: .fit
                 )
             }
             .ignoresSafeArea()
