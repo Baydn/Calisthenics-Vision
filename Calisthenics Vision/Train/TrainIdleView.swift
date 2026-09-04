@@ -146,22 +146,12 @@ struct TrainIdleView: View {
                 .padding(.bottom, Theme.Metric.tabBarClearance + 8)
             }
 
-            // Flip, coaching and tuning are all side features and live together
-            // on the trailing edge, above centre.
-            //
-            // Flip used to sit on its own near the tab bar, which put it
-            // right where the bar's own height changes push things around,
-            // and forced the timer/tune column into an awkward "stay clear
-            // of it" offset. One column fixes both: flip has a stable spot
-            // that isn't fighting the chrome below it, and the workaround
-            // padding goes with it.
-            //
-            // Trailing-aligned so the timer can widen when it opens without
-            // shoving the buttons below it sideways.
+            // Coaching and tuning live together on the trailing edge, above
+            // centre — trailing-aligned so the timer can widen when it opens
+            // without shoving tune sideways.
             HStack {
                 Spacer()
                 VStack(alignment: .trailing, spacing: 12) {
-                    flipCameraButton
                     timerButton
                     tuneButton
                 }
@@ -169,6 +159,20 @@ struct TrainIdleView: View {
             }
             .frame(maxHeight: .infinity, alignment: .center)
             .padding(.bottom, 80)
+
+            // Flip sits beside the shutter, at the same height, the way a
+            // camera app puts it — not grouped with coaching/tuning (it's
+            // part of taking the shot, closer in spirit to the lens toggle
+            // above the shutter than to a setting), and not pinned near the
+            // tab bar either, which is what put it in the way of the bar's
+            // own height and the countdown control's expansion before.
+            HStack {
+                Spacer()
+                flipCameraButton
+            }
+            .frame(maxHeight: .infinity, alignment: .bottom)
+            .padding(.trailing, 18)
+            .padding(.bottom, Theme.Metric.tabBarClearance + 25)
         }
     }
 
