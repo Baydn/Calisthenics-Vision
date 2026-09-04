@@ -141,4 +141,23 @@ extension Movement {
     }
 
     var isTrackingSupported: Bool { makeTracker() != nil }
+
+    /// Whether a pose is in the position this movement is judged from, with
+    /// no tracker state involved.
+    ///
+    /// The live HUD reads this off the running tracker's diagnostics, but
+    /// review has no tracker — it replays frames off disk — and the overlay
+    /// still needs to fade in and out at the same moments. Each case defers
+    /// to the same gate its tracker uses, so the two never disagree.
+    /// Nil where the movement has no tracker and so no position to be in.
+    func isInPosition(_ pose: Pose) -> Bool? {
+        switch self {
+        case .pushUps:   pose.isTorsoHorizontal ?? false
+        case .pullUps:   PullUpTracker.isHanging(pose)
+        case .squat:     SquatTracker.isStandingUpright(pose)
+        case .dip:       DipTracker.isSupported(pose)
+        case .handstand: HandstandTracker.isInverted(pose)
+        default:         nil
+        }
+    }
 }

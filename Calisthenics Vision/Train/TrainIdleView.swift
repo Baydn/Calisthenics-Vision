@@ -34,6 +34,10 @@ struct TrainIdleView: View {
     /// The tracker for the selected movement, or nil where none exists yet.
     @State private var tracker: (any MovementTracker)? = PushUpTracker()
     @State private var progress = MovementProgress()
+    /// Whether the tracker considers the body to be in position right now.
+    /// Drives the overlay: faded while it's false, solid once the movement
+    /// is actually being judged.
+    @State private var isInPosition = false
     @State private var lastEvent: FormIssue?
 
     @State private var phase: Phase = .idle
@@ -229,6 +233,7 @@ struct TrainIdleView: View {
         let event = current.update(pose: pose, timestampMs: timestampMs)
         tracker = current
         progress = current.progress
+        isInPosition = current.diagnostics.isReady
 
         // Telemetry is only worth keeping for a session being recorded.
         if phase == .recording, let pose {
@@ -302,6 +307,7 @@ struct TrainIdleView: View {
         hasBeatenRecord = false
         tracker?.reset()
         progress = tracker?.progress ?? MovementProgress()
+        isInPosition = false
         lastEvent = nil
         elapsed = 0
         repTimestamps = []
@@ -420,6 +426,8 @@ struct TrainIdleView: View {
                 PoseOverlayView(
                     pose: poseSession.pose,
                     isFormValid: progress.isFormValid,
+                    isEngaged: isInPosition,
+                    style: settings.overlayStyle,
                     sourceAspect: poseSession.pose?.aspect ?? 9.0 / 16.0,
                     contentMode: .fill
                 )
@@ -935,6 +943,7 @@ struct TrainIdleView: View {
         // nothing and looking broken.
         tracker = TrackerFactory.make(for: movement)
         progress = tracker?.progress ?? MovementProgress()
+        isInPosition = false
         lastEvent = nil
     }
 }

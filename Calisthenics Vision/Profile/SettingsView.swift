@@ -16,6 +16,7 @@ struct SettingsView: View {
         // which lens and how long the countdown runs are decided by where
         // you've just propped the phone, not once in a settings screen.
         case feedback = "Feedback"
+        case skeleton = "Skeleton"
         case storage = "Storage"
 
         var id: String { rawValue }
@@ -43,6 +44,7 @@ struct SettingsView: View {
 
                     switch section {
                     case .feedback: feedbackSection
+                    case .skeleton: skeletonSection
                     case .storage:  storageSection
                     }
                 }
@@ -108,6 +110,75 @@ struct SettingsView: View {
         }
         .frame(height: 44)
         caption("Spoken rep counts, hold time and form cues. Toggled on the Train screen, where you decide it — and where you can turn it off the moment someone walks in.")
+    }
+
+    // MARK: - Skeleton
+
+    @ViewBuilder
+    private var skeletonSection: some View {
+        label("STYLE")
+
+        HStack(spacing: 10) {
+            ForEach(PoseOverlayStyle.allCases) { style in
+                styleSwatch(style)
+            }
+        }
+
+        Text(settings.overlayStyle.detail)
+            .font(.system(size: 13))
+            .foregroundStyle(Theme.Color.secondaryText)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 12)
+
+        caption("""
+        The skeleton is faint while you're just standing in front of the         camera, and goes solid the moment you're in position for the         movement — upside down for a handstand, horizontal for a push-up.         That's how you can tell from across the room that it has picked up         the movement and not just picked up a person. It turns red only when         form actually breaks.
+        """)
+
+        caption("This is the same skeleton drawn over your recordings in Session Review, so what you review looks like what you trained in front of.")
+    }
+
+    private func styleSwatch(_ style: PoseOverlayStyle) -> some View {
+        let isSelected = settings.overlayStyle == style
+
+        return Button {
+            withAnimation(Theme.Motion.selection) { settings.overlayStyle = style }
+        } label: {
+            VStack(spacing: 8) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Theme.Color.elevated)
+
+                    if style == .off {
+                        Image(systemName: "eye.slash")
+                            .font(.system(size: 20))
+                            .foregroundStyle(Theme.Color.secondaryText)
+                    } else {
+                        PoseOverlayView(
+                            pose: .mannequin,
+                            style: style,
+                            sourceAspect: 0.72,
+                            contentMode: .fit,
+                            scale: 0.62
+                        )
+                        .padding(6)
+                    }
+                }
+                .frame(height: 96)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(
+                            isSelected ? Theme.Color.primaryText : Theme.Color.divider,
+                            lineWidth: isSelected ? 2 : 1
+                        )
+                }
+
+                Text(style.title)
+                    .font(isSelected ? Theme.Font.controlActive() : Theme.Font.control())
+                    .foregroundStyle(isSelected
+                                     ? Theme.Color.primaryText : Theme.Color.secondaryText)
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Storage

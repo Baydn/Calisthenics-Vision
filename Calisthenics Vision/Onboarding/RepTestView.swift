@@ -38,6 +38,8 @@ struct RepTestView: View {
     @State private var movement: Movement = .pushUps
     @State private var tracker: (any MovementTracker)? = PushUpTracker()
     @State private var progress = MovementProgress()
+    /// Solid skeleton once the tracker is judging, faded before that.
+    @State private var isInPosition = false
     @State private var phase: Phase = .ready
     @State private var countdownTask: Task<Void, Never>?
     @State private var startedAt: Date?
@@ -95,6 +97,7 @@ struct RepTestView: View {
         let event = current.update(pose: pose, timestampMs: timestampMs)
         tracker = current
         progress = current.progress
+        isInPosition = current.diagnostics.isReady
 
         switch event {
         case .repCompleted(let total):
@@ -185,6 +188,7 @@ struct RepTestView: View {
         withAnimation(.snappy(duration: 0.2)) { movement = next }
         tracker = TrackerFactory.make(for: next)
         progress = tracker?.progress ?? MovementProgress()
+        isInPosition = false
     }
 
     // MARK: - Pieces
@@ -200,6 +204,8 @@ struct RepTestView: View {
                 PoseOverlayView(
                     pose: poseSession.pose,
                     isFormValid: progress.isFormValid,
+                    isEngaged: isInPosition,
+                    style: settings.overlayStyle,
                     sourceAspect: poseSession.pose?.aspect ?? 9.0 / 16.0,
                     contentMode: .fill
                 )

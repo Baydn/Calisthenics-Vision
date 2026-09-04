@@ -73,6 +73,16 @@ final class AppSettings {
         didSet { defaults.set(holdAnnounceInterval, forKey: Keys.holdInterval) }
     }
 
+    // MARK: - Overlay
+
+    /// How the skeleton is drawn over the camera and over a recording.
+    /// One preference for both, because they're the same picture of the same
+    /// thing — a skeleton that changes appearance between live and review
+    /// makes review harder to read against what you remember seeing.
+    var overlayStyle: PoseOverlayStyle {
+        didSet { defaults.set(overlayStyle.rawValue, forKey: Keys.overlayStyle) }
+    }
+
     // MARK: - Movement tuning
 
     /// How deep a push-up has to go before it counts, as a share of the
@@ -145,6 +155,7 @@ final class AppSettings {
         static let holdInterval = "settings.holdAnnounceInterval"
         static let repDepth = "settings.repDepth"
         static let pinnedMovements = "settings.pinnedMovements"
+        static let overlayStyle = "settings.overlayStyle"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -163,6 +174,8 @@ final class AppSettings {
         holdAnnounceInterval = defaults.object(forKey: Keys.holdInterval) as? Int ?? 5
         repDepth = (defaults.string(forKey: Keys.repDepth))
             .flatMap(RepDepth.init(rawValue:)) ?? .standard
+        overlayStyle = (defaults.string(forKey: Keys.overlayStyle))
+            .flatMap(PoseOverlayStyle.init(rawValue:)) ?? .outline
 
         if let stored = defaults.array(forKey: Keys.pinnedMovements) as? [String] {
             pinnedMovements = stored.compactMap(Movement.init(rawValue:))
@@ -180,7 +193,8 @@ final class AppSettings {
                     Keys.haptics, Keys.screenAwake, Keys.recordsVideo,
                     Keys.audioCoaching, Keys.speaksReps, Keys.speaksHoldTime,
                     Keys.speaksFormCues, Keys.speaksCountdown,
-                    Keys.holdInterval, Keys.repDepth, Keys.pinnedMovements] {
+                    Keys.holdInterval, Keys.repDepth, Keys.pinnedMovements,
+                    Keys.overlayStyle] {
             defaults.removeObject(forKey: key)
         }
         countdownSeconds = 3
@@ -194,6 +208,7 @@ final class AppSettings {
         speaksCountdown = true
         holdAnnounceInterval = 5
         repDepth = .standard
+        overlayStyle = .outline
         pinnedMovements = Movement.allCases.filter(\.isTrackingSupported)
     }
     #endif

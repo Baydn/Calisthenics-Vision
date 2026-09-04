@@ -37,6 +37,10 @@ struct SettingsRootView: View {
                             section = .feedback
                         }
                         separator
+                        row("Skeleton", value: settings.overlayStyle.title) {
+                            section = .skeleton
+                        }
+                        separator
                         row("Storage", value: settings.recordsVideo ? "Recording video" : "Telemetry only") {
                             section = .storage
                         }
