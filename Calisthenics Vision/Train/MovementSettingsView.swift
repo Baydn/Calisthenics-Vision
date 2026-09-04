@@ -25,7 +25,7 @@ struct MovementSettingsView: View {
         NavigationStack {
             Form {
                 coachingSection
-                if movement == .pushUps { pushUpSection }
+                if movement.tunesRepDepth { pushUpSection }
                 if movement.isTimedHold { holdSection }
             }
             .scrollContentBackground(.hidden)

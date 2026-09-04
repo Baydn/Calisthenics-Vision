@@ -122,6 +122,25 @@ struct Pose {
         return abs(line.z) / length
     }
 
+    /// How much of the stance — ankle to ankle — runs along the camera axis,
+    /// 0…1.
+    ///
+    /// The squat's form check compares knee separation to ankle separation.
+    /// Filmed straight from the side that separation runs into depth, which
+    /// is the axis a monocular estimate can't measure, so the ratio would be
+    /// noise dressed as a number. This is what tells that check to stay quiet
+    /// (POSE.md Law 5) — the same job `bodyLineDepthFraction` does for the
+    /// push-up's hip line.
+    var stanceDepthFraction: Double? {
+        guard let left = worldPoint(.leftAnkle), let right = worldPoint(.rightAnkle) else {
+            return nil
+        }
+        let stance = left - right
+        let length = simd_length(stance)
+        guard length > 0.05 else { return nil }
+        return abs(stance.z) / length
+    }
+
     private func worldMidpoint(_ a: PoseJoint, _ b: PoseJoint) -> SIMD3<Double>? {
         guard let pa = worldPoint(a), let pb = worldPoint(b) else { return nil }
         return (pa + pb) / 2

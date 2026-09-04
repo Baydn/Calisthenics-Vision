@@ -68,7 +68,7 @@ struct HistoryProgressView: View {
     @State private var showPaywall = false
     @State private var detail: RecordDetailView.Metric?
 
-    private let filterOptions: [Movement] = [.pushUps, .pullUps, .handstand]
+    private let filterOptions: [Movement] = [.pushUps, .pullUps, .squat, .dip, .handstand]
 
     var body: some View {
         ScrollView {

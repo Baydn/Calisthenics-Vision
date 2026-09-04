@@ -413,7 +413,7 @@ For a segmented hold additionally: several attempts recorded separately, rest
 between them uncounted, a brief dropout not splitting one hold, a sub-second
 blip discarded along with its time, and finishing mid-hold keeping it.
 
-Current coverage: **38 push-up, 46 handstand, 24 pull-up, 17 body-plausibility checks**, all passing.
+Current coverage: **38 push-up, 46 handstand, 24 pull-up, 21 squat, 25 dip, 17 body-plausibility checks (171 total)**, all passing.
 
 A fixture that shares a bug with the code proves nothing — the aspect-ratio
 distortion bug passed 14 tests because the fixtures were generated in the
@@ -461,6 +461,16 @@ Change these deliberately; each has a reason above.
 `maxHipDeviation 15` · `minimumRange 45` · `bottomGateFraction 0.42` ·
 `topGateFraction 0.25` · `minConfidence 0.5` · `formConfidence 0.8` ·
 `maxBodyLineDepth 0.6` · `framesToFlag 12` · range decay `0.05`/frame
+
+**SquatTracker** — `standAngle 168` `bottomAngle 95` (seeds only) ·
+`minimumRange 40` · `bottomGateFraction 0.42` · `topGateFraction 0.25` ·
+`valgusRatio 0.72` (knee-width ÷ ankle-width, judged only past 40% depth) ·
+`minConfidence 0.5` · `formConfidence 0.8` · `framesToFlag 12`
+
+**DipTracker** — `lockoutAngle 168` `bottomAngle 95` (seeds only) ·
+`minimumRange 40` · `bottomGateFraction 0.42` · `topGateFraction 0.25` ·
+depth signal: shoulder-below-elbow, boolean not scored · `minConfidence 0.5`
+· `formConfidence 0.8` · `framesToFlag 15`
 
 **PullUpTracker** — `hangAngle 165` `topAngle 70` (seeds only) ·
 `minimumRange 40` · `topGateFraction 0.42` · `hangGateFraction 0.25` ·

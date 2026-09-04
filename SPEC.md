@@ -70,6 +70,16 @@ what each movement does.
   loose — pulling two thirds of the way up is doing pull-ups. Kipping is
   flagged when the shoulder-hip-knee line folds past 35°, and only when the
   knees are genuinely visible.
+- **Squat Counter** — same shape as the push-up: standing is lockout, the
+  bottom is a fraction of the person's own knee range (POSE.md Law 3). Gated
+  on an upright torso with feet below the hips. Knees caving inward is scored
+  as a knee-to-ankle width ratio — a ratio survives any camera distance —
+  and only judged past 40% depth, where it actually happens.
+- **Dip Counter** — elbow-driven like the push-up and pull-up, counted at
+  lockout. Gated on an upright torso with the hands beside the hips rather
+  than overhead, which is what separates it from a pull-up. Depth is judged
+  by whether the shoulder drops to or below the elbow — scored per rep, never
+  gated, so a partial dip still counts (Law 4).
 - **Handstand Timer** — the clock runs whenever the body is inverted, judged
   from world-space joint heights, with tucked and piked handstands counting.
   Straightness is **scored, never required** (POSE.md Law 4): line quality is
