@@ -240,12 +240,11 @@ enum Movement: String, CaseIterable, Identifiable, Hashable, Codable {
 
     /// Free tier ships push-ups and handstands; everything else is Pro
     /// (SPEC.md §4).
-    var isPro: Bool {
-        switch self {
-        case .pushUps, .handstand: false
-        default: true
-        }
-    }
+    /// Free tier ships every movement with a real tracker. Gating a movement
+    /// with no tracker behind Pro would be selling something that doesn't
+    /// exist; gating one that *is* tracked just to protect revenue during a
+    /// beta means testers can't reach the thing they were asked to test.
+    var isPro: Bool { !isTrackingSupported }
 
     /// Reps are counted; holds are timed.
     var isTimedHold: Bool {
