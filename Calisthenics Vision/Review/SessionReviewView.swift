@@ -231,13 +231,13 @@ struct SessionReviewView: View {
             }
 
             if showsSkeleton, let pose = poseAtCurrentTime {
-                // The player fills, so the overlay has to fill the same way or
+                // The player fits, so the overlay has to fit the same way or
                 // the skeleton drifts off the body.
                 PoseOverlayView(
                     pose: pose,
                     isFormValid: true,
                     sourceAspect: videoAspect,
-                    contentMode: .fill
+                    contentMode: .fit
                 )
             }
 
@@ -587,10 +587,10 @@ private struct VideoPlayerLayer: UIViewRepresentable {
     func makeUIView(context: Context) -> PlayerView {
         let view = PlayerView()
         view.playerLayer.player = player
-        // Fill, matching the Train screen. A handstand clip is portrait and
-        // the point of the replay is seeing the body full height, not a
-        // letterboxed strip with black above and below it.
-        view.playerLayer.videoGravity = .resizeAspectFill
+        // Fit, so the whole recording is visible. The bands either side are
+        // filled with a blurred still from the clip itself, which reads as
+        // part of the picture rather than as missing screen.
+        view.playerLayer.videoGravity = .resizeAspect
         return view
     }
 

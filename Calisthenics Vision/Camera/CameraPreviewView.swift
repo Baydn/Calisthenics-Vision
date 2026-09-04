@@ -24,15 +24,13 @@ struct CameraPreviewView: UIViewRepresentable {
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
         view.previewLayer.session = session
-        // Fill.
+        // Fit: the whole captured frame is shown, nothing cropped away.
         //
-        // The capture is 9:16 and the screen is taller, so this crops the
-        // sides — but a full-height portrait picture is what you want when
-        // the subject is a standing or inverted body, and letterboxing to
-        // avoid the crop wasted the top and bottom of the screen on black.
-        // The cropped edges are still written to the recording, so nothing is
-        // lost; it's a framing decision, not a capture one.
-        view.previewLayer.videoGravity = .resizeAspectFill
+        // The screen is taller than the 9:16 capture, so this leaves a band
+        // above and below. Those bands are given to the HUD rather than left
+        // as dead black — the controls sit in them instead of over your body,
+        // which is the one thing on screen worth not covering.
+        view.previewLayer.videoGravity = .resizeAspect
         view.onRotationChange = onRotationChange
         return view
     }
