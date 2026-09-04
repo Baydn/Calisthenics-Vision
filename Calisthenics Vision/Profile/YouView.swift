@@ -69,6 +69,7 @@ struct YouView: View {
             .navigationDestination(for: WorkoutSession.self) { session in
                 SessionReviewView(session: session)
             }
+            .navigationDestination(for: Workout.self) { WorkoutDetailView(workout: $0) }
             .navigationDestination(isPresented: $showProfile) {
                 ProfileView()
             }

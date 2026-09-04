@@ -68,11 +68,6 @@ struct HomeView: View {
 
                     Spacer(minLength: 0)
 
-                    Button { showAddWorkout = true } label: {
-                        headerButton("plus", label: "New workout")
-                    }
-                    .buttonStyle(.plain)
-
                     Button { showNotifications = true } label: {
                         headerButton("bell.fill", label: "Notifications", badge: 3)
                     }
@@ -84,9 +79,26 @@ struct HomeView: View {
                     .buttonStyle(.plain)
                 }
 
-                PreviewNotice(
-                    "No accounts exist yet, so everyone here is invented, and search and messages don't open. This is for deciding what a feed entry should carry."
-                )
+                // Prominent rather than a plus in the header: posting a
+                // workout is the one thing you'd come to this screen to *do*,
+                // and it was competing with four icons for attention.
+                Button { showAddWorkout = true } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 17, weight: .semibold))
+                        Text("Post a workout")
+                            .font(.system(size: 16, weight: .semibold))
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .opacity(0.5)
+                    }
+                    .foregroundStyle(Theme.Color.background)
+                    .padding(.horizontal, 16)
+                    .frame(height: 50)
+                    .background(Theme.Color.primaryText, in: .rect(cornerRadius: Theme.Metric.cardRadius))
+                }
+                .buttonStyle(.plain)
 
                 SegmentedControl(segments: Tab.allCases, title: \.rawValue, selection: $tab)
             }
@@ -141,6 +153,10 @@ struct HomeView: View {
 
     private var feed: some View {
         VStack(spacing: 14) {
+            PreviewNotice(
+                "No accounts exist yet, so the people below are invented. Your own posts are real and appear first."
+            )
+
             // Yours first — they're the only real ones.
             ForEach(posts) { post in
                 PostCard(post: post, sessions: sessions)

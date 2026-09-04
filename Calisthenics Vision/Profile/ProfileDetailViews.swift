@@ -29,7 +29,8 @@ struct WorkoutListView: View {
                     empty
                 } else {
                     ForEach(workouts) { workout in
-                        card(workout)
+                        NavigationLink(value: workout) { card(workout) }
+                            .buttonStyle(.plain)
                     }
                 }
             }
@@ -41,6 +42,7 @@ struct WorkoutListView: View {
         .background(Theme.Color.background)
         .navigationTitle("Workouts")
         .navigationBarTitleDisplayMode(.large)
+        .navigationDestination(for: Workout.self) { WorkoutDetailView(workout: $0) }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { showBuilder = true } label: {
@@ -104,21 +106,23 @@ struct WorkoutListView: View {
                 }
             }
 
-            Button { posting = workout } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 13, weight: .semibold))
-                    Text("Post this workout")
-                        .font(.system(size: 13, weight: .semibold))
-                }
-                .foregroundStyle(Theme.Color.valid)
-                .frame(maxWidth: .infinity)
-                .frame(height: 38)
-                .contentShape(.rect)
+            HStack(spacing: 6) {
+                Image(systemName: workout.visibility.symbol)
+                    .font(.system(size: 10, weight: .semibold))
+                Text(workout.visibility.title.uppercased())
+                    .font(Theme.Font.cardLabel())
+                    .tracking(Theme.Metric.labelTracking)
+                Spacer(minLength: 0)
+                Text("VIEW")
+                    .font(Theme.Font.cardLabel())
+                    .tracking(Theme.Metric.labelTracking)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .bold))
             }
-            .buttonStyle(.plain)
+            .foregroundStyle(Theme.Color.secondaryText)
+            .padding(.top, 2)
             .overlay(alignment: .top) {
-                Rectangle().fill(Theme.Color.rowSeparator).frame(height: 1)
+                Rectangle().fill(Theme.Color.rowSeparator).frame(height: 1).offset(y: -6)
             }
         }
         .padding(16)

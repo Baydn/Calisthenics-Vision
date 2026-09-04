@@ -71,7 +71,8 @@ struct WorkoutsView: View {
                         .padding(.bottom, 6)
                 } else {
                     ForEach(workouts) { workout in
-                        savedCard(workout)
+                        NavigationLink(value: workout) { savedCard(workout) }
+                            .buttonStyle(.plain)
                     }
                 }
 
@@ -128,22 +129,20 @@ struct WorkoutsView: View {
                 }
             }
 
-            Button { posting = workout } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 13, weight: .semibold))
-                    Text("Post this workout")
-                        .font(.system(size: 13, weight: .semibold))
-                }
-                .foregroundStyle(Theme.Color.valid)
-                .frame(maxWidth: .infinity)
-                .frame(height: 38)
-                .contentShape(.rect)
+            HStack(spacing: 6) {
+                Image(systemName: workout.visibility.symbol)
+                    .font(.system(size: 10, weight: .semibold))
+                Text(workout.visibility.title.uppercased())
+                    .font(Theme.Font.cardLabel())
+                    .tracking(Theme.Metric.labelTracking)
+                Spacer(minLength: 0)
+                Text("VIEW")
+                    .font(Theme.Font.cardLabel())
+                    .tracking(Theme.Metric.labelTracking)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .bold))
             }
-            .buttonStyle(.plain)
-            .overlay(alignment: .top) {
-                Rectangle().fill(Theme.Color.rowSeparator).frame(height: 1)
-            }
+            .foregroundStyle(Theme.Color.secondaryText)
         }
         .padding(16)
         .background(Theme.Color.card, in: .rect(cornerRadius: Theme.Metric.cardRadius))

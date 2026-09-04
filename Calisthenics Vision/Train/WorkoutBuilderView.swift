@@ -31,6 +31,7 @@ struct WorkoutBuilderView: View {
     @State private var notes = ""
     @State private var didPrefill = false
     @State private var rejected: String?
+    @State private var visibility: WorkoutVisibility = .everyone
 
     private var chosenSets: [WorkoutSession] {
         sessions.filter { chosen.contains($0.id) }.sorted { $0.startedAt < $1.startedAt }
@@ -55,19 +56,43 @@ struct WorkoutBuilderView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 24) {
+                    // Details, then what's in it, then who sees it. Three
+                    // questions in the order you'd answer them, rather than
+                    // one screen of mixed controls.
                     nameField
                     notesField
 
-                    if candidates.isEmpty {
-                        Text("Nothing recorded in the last two weeks.")
-                            .font(Theme.Font.body())
-                            .foregroundStyle(Theme.Color.secondaryText)
-                    } else {
-                        ForEach(grouped, id: \.day) { group in
-                            daySection(group.day, group.sets)
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("SETS").sectionHeaderStyle()
+                            Spacer()
+                            if !chosenSets.isEmpty {
+                                Text("\(chosen.count) selected · \(spanLabel)")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(Theme.Color.valid)
+                            }
+                        }
+
+                        if let rejected {
+                            Text(rejected)
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.Color.warning)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        if candidates.isEmpty {
+                            Text("Nothing recorded in the last two weeks.")
+                                .font(Theme.Font.body())
+                                .foregroundStyle(Theme.Color.secondaryText)
+                        } else {
+                            ForEach(grouped, id: \.day) { group in
+                                daySection(group.day, group.sets)
+                            }
                         }
                     }
+
+                    visibilityPicker
                 }
                 .padding(.horizontal, Theme.Metric.screenPadding)
                 .padding(.top, 8)
@@ -106,18 +131,56 @@ struct WorkoutBuilderView: View {
             .frame(height: 46)
             .background(Theme.Color.card, in: .rect(cornerRadius: 10))
 
-            if !chosenSets.isEmpty {
-                Text("\(chosen.count) set\(chosen.count == 1 ? "" : "s") · \(spanLabel)")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.Color.valid)
-            }
+        }
+    }
 
-            if let rejected {
-                Text(rejected)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.Color.warning)
-                    .fixedSize(horizontal: false, vertical: true)
+    /// Last, because it's the last decision you make and the one you want to
+    /// see plainly before saving.
+    private var visibilityPicker: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("WHO CAN SEE IT").sectionHeaderStyle()
+
+            VStack(spacing: 0) {
+                ForEach(Array(WorkoutVisibility.allCases.enumerated()), id: \.element.id) { index, option in
+                    Button {
+                        withAnimation(Theme.Motion.content) { visibility = option }
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: option.symbol)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(visibility == option
+                                                 ? Theme.Color.valid : Theme.Color.secondaryText)
+                                .frame(width: 22)
+
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(option.title)
+                                    .font(Theme.Font.body())
+                                    .foregroundStyle(Theme.Color.primaryText)
+                                Text(option.detail)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Theme.Color.tertiaryText)
+                            }
+
+                            Spacer(minLength: 8)
+
+                            Image(systemName: visibility == option
+                                  ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 18))
+                                .foregroundStyle(visibility == option
+                                                 ? Theme.Color.valid : Theme.Color.tertiaryText)
+                        }
+                        .frame(height: 56)
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+
+                    if index < WorkoutVisibility.allCases.count - 1 {
+                        Rectangle().fill(Theme.Color.rowSeparator).frame(height: 1)
+                    }
+                }
             }
+            .padding(.horizontal, 14)
+            .background(Theme.Color.card, in: .rect(cornerRadius: Theme.Metric.cardRadius))
         }
     }
 
@@ -289,6 +352,7 @@ struct WorkoutBuilderView: View {
             name: trimmed.isEmpty ? Workout.suggestedName(for: sets) : trimmed,
             notes: notes.trimmingCharacters(in: .whitespacesAndNewlines),
             createdAt: sets.first?.startedAt ?? .now,
+            visibility: visibility,
             sessionIDs: sets.map(\.id)
         )
         modelContext.insert(workout)
