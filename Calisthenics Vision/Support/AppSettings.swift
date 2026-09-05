@@ -43,6 +43,13 @@ final class AppSettings {
 
     // MARK: - Coaching
 
+    /// Short confirmation tones for rep, hold-second, form-break and
+    /// countdown events. On by default, unlike speech — a tone isn't the
+    /// social nuisance a voice announcing your rep count is.
+    var soundCues: Bool {
+        didSet { defaults.set(soundCues, forKey: Keys.soundCues) }
+    }
+
     /// Spoken coaching. Off by default and turned on from the Train screen —
     /// an app that starts talking unprompted in a gym is worse than a silent
     /// one, and this is the kind of thing you enable when you're about to
@@ -155,6 +162,7 @@ final class AppSettings {
         static let haptics = "settings.haptics"
         static let screenAwake = "settings.keepScreenAwake"
         static let recordsVideo = "settings.recordsVideo"
+        static let soundCues = "settings.soundCues"
         static let audioCoaching = "settings.audioCoaching"
         static let speaksReps = "settings.speaksReps"
         static let speaksHoldTime = "settings.speaksHoldTime"
@@ -175,6 +183,7 @@ final class AppSettings {
         hapticsEnabled = defaults.object(forKey: Keys.haptics) as? Bool ?? true
         keepsScreenAwake = defaults.object(forKey: Keys.screenAwake) as? Bool ?? true
         recordsVideo = defaults.object(forKey: Keys.recordsVideo) as? Bool ?? true
+        soundCues = defaults.object(forKey: Keys.soundCues) as? Bool ?? true
         audioCoaching = defaults.object(forKey: Keys.audioCoaching) as? Bool ?? false
         speaksReps = defaults.object(forKey: Keys.speaksReps) as? Bool ?? true
         speaksHoldTime = defaults.object(forKey: Keys.speaksHoldTime) as? Bool ?? true
@@ -202,6 +211,7 @@ final class AppSettings {
     func resetToDefaults() {
         for key in [Keys.countdown,
                     Keys.haptics, Keys.screenAwake, Keys.recordsVideo,
+                    Keys.soundCues,
                     Keys.audioCoaching, Keys.speaksReps, Keys.speaksHoldTime,
                     Keys.speaksFormCues, Keys.speaksCountdown,
                     Keys.holdInterval, Keys.repDepth, Keys.pinnedMovements,
@@ -212,6 +222,7 @@ final class AppSettings {
         hapticsEnabled = true
         keepsScreenAwake = true
         recordsVideo = true
+        soundCues = true
         audioCoaching = false
         speaksReps = true
         speaksHoldTime = true

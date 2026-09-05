@@ -43,6 +43,7 @@ struct MovementSettingsView: View {
 
     private var coachingSection: some View {
         Section {
+            Toggle("Sound cues", isOn: $settings.soundCues)
             Toggle("Spoken coaching", isOn: $settings.audioCoaching)
 
             if settings.audioCoaching {

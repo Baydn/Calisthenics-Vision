@@ -86,6 +86,7 @@ struct RepTestView: View {
             countdownTask?.cancel()
             poseSession.onPose = nil
             AudioCoach.shared.end()
+            SoundCues.shared.end()
             capture.suspend()
         }
     }
@@ -103,9 +104,11 @@ struct RepTestView: View {
         case .repCompleted(let total):
             Haptics.repCounted()
             AudioCoach.shared.repCounted(total)
+            SoundCues.shared.repCounted()
         case .holdTick(let seconds):
             Haptics.holdTick()
             AudioCoach.shared.holdTick(seconds: seconds)
+            SoundCues.shared.holdTick()
         case .holdCompleted(let index, let duration):
             Haptics.holdCompleted()
             AudioCoach.shared.holdCompleted(index: index, duration: duration)
@@ -126,6 +129,7 @@ struct RepTestView: View {
                 phase = .countdown(value)
                 Haptics.countdownTick()
                 AudioCoach.shared.countdown(value)
+                SoundCues.shared.countdown()
                 try? await Task.sleep(for: .seconds(1))
                 if Task.isCancelled { phase = .ready; return }
             }
@@ -134,6 +138,7 @@ struct RepTestView: View {
             Haptics.sessionStart()
             AudioCoach.shared.begin()
             AudioCoach.shared.setStarted()
+            SoundCues.shared.begin()
         }
     }
 
@@ -180,6 +185,7 @@ struct RepTestView: View {
         phase = .done
         Haptics.sessionComplete()
         AudioCoach.shared.end()
+        SoundCues.shared.end()
         onFinish(Achievements.newlyEarned(from: before, to: after))
     }
 

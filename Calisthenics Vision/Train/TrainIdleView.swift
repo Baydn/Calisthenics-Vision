@@ -118,6 +118,7 @@ struct TrainIdleView: View {
             countdownTask?.cancel()
             poseSession.onPose = nil
             AudioCoach.shared.end()
+            SoundCues.shared.end()
             capture.suspend()
         }
         .onReceive(ticker) { _ in
@@ -250,12 +251,14 @@ struct TrainIdleView: View {
             if phase == .recording { repTimestamps.append(timestampMs) }
             Haptics.repCounted()
             AudioCoach.shared.repCounted(total)
+            SoundCues.shared.repCounted()
         case .holdTick(let seconds):
             // A quiet pulse each second, so a hold can be timed without
             // looking at the screen — which is the whole point upside down.
             // Speech carries the actual number, which a pulse can't.
             Haptics.holdTick()
             AudioCoach.shared.holdTick(seconds: seconds)
+            SoundCues.shared.holdTick()
         case .holdCompleted(let index, let duration):
             // A firmer tap: that attempt is banked and the next one starts
             // from zero.
@@ -266,6 +269,7 @@ struct TrainIdleView: View {
             lastEvent = issue
             Haptics.formBreak()
             AudioCoach.shared.formIssue(issue)
+            SoundCues.shared.formBreak()
         case .formRecovered:
             lastEvent = nil
         case nil:
@@ -300,6 +304,7 @@ struct TrainIdleView: View {
                 phase = .countdown(value)
                 Haptics.countdownTick()
                 AudioCoach.shared.countdown(value)
+                SoundCues.shared.countdown()
                 try? await Task.sleep(for: .seconds(1))
                 if Task.isCancelled { phase = .idle; return }
             }
@@ -324,6 +329,7 @@ struct TrainIdleView: View {
         Haptics.sessionStart()
         AudioCoach.shared.begin()
         AudioCoach.shared.setStarted()
+        SoundCues.shared.begin()
     }
 
     private func finishRecording() {
@@ -391,6 +397,7 @@ struct TrainIdleView: View {
                     : "Set complete. \(reps) reps."
             )
             AudioCoach.shared.end()
+            SoundCues.shared.end()
             startedAt = nil
             phase = .idle
         }
