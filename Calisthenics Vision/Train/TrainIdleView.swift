@@ -39,6 +39,7 @@ struct TrainIdleView: View {
     /// is actually being judged.
     @State private var isInPosition = false
     @State private var lastEvent: FormIssue?
+    @State private var framingHint = FramingHint()
 
     @State private var phase: Phase = .idle
     @State private var startedAt: Date?
@@ -104,7 +105,12 @@ struct TrainIdleView: View {
             if case .countdown(let value) = phase {
                 countdownOverlay(value)
             }
+
+            if phase == .recording, let message = framingHint.message {
+                framingHintPill(message)
+            }
         }
+        .animation(Theme.Motion.content, value: framingHint.message)
         .task {
             poseSession.onPose = handlePose
             capture.activate()
@@ -237,6 +243,16 @@ struct TrainIdleView: View {
         // can't count yet should still leave something to look at.
         if phase == .recording, let pose {
             telemetry?.append(timestampMs: timestampMs, values: Self.flatten(pose))
+        }
+
+        // Framing feedback only matters once a set is under way — being out
+        // of frame before recording starts is the normal way this app is
+        // used (BACKLOG.md F2), and the hint has to clear the moment
+        // recording stops rather than linger into the saved-set screen.
+        if phase == .recording {
+            framingHint.update(pose: pose, timestampMs: timestampMs)
+        } else {
+            framingHint.reset()
         }
 
         // Trackers are value types, so mutate a local copy and write it back.
@@ -706,6 +722,25 @@ struct TrainIdleView: View {
                 .animation(.snappy(duration: 0.2), value: value)
                 .shadow(color: .black.opacity(0.5), radius: 12)
         }
+        .allowsHitTesting(false)
+    }
+
+    /// A single line saying which part of you the camera has lost, shown only
+    /// once it's been missing long enough to be worth interrupting the set
+    /// over (`FramingHint`). Never blocking, never an audio nag — Onyx's
+    /// repeated "move further away" is a top review complaint.
+    private func framingHintPill(_ message: String) -> some View {
+        VStack {
+            Text(message)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.Color.primaryText)
+                .padding(.horizontal, 16)
+                .frame(height: 34)
+                .background(.black.opacity(0.55), in: .capsule)
+                .padding(.top, 60)
+            Spacer()
+        }
+        .transition(.opacity)
         .allowsHitTesting(false)
     }
 
