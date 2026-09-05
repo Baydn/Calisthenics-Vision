@@ -202,6 +202,17 @@ extension Movement {
         }
     }
 
+    /// A one-time framing tip (BACKLOG.md F5), never a gate — a movement
+    /// whose line runs the length of the body loses more of it to a portrait
+    /// frame than one whose line runs top to bottom does, so the same
+    /// horizontal/vertical split `holdsAVerticalLine` already draws answers
+    /// this too. Nil for anything with no line to fit in frame in the first
+    /// place.
+    var cameraAngleHint: String? {
+        guard alignmentChain != nil, !holdsAVerticalLine else { return nil }
+        return "Films better in landscape — your whole line fits in frame"
+    }
+
     /// Whether a pose is in the position this movement is judged from, with
     /// no tracker state involved.
     ///

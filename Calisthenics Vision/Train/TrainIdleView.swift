@@ -475,6 +475,7 @@ struct TrainIdleView: View {
             // mid-session would silently invalidate the reps already counted.
             if phase == .idle {
                 movementPicker
+                cameraAngleHintLine
             }
 
             HStack(alignment: .top) {
@@ -522,6 +523,35 @@ struct TrainIdleView: View {
             .padding(.horizontal, 16)
         }
         .scrollIndicators(.hidden)
+    }
+
+    /// A framing tip for the selected movement, shown until it's tapped away
+    /// once — never again after that, and never a gate on anything.
+    @ViewBuilder
+    private var cameraAngleHintLine: some View {
+        if let hint = selected.cameraAngleHint,
+           !settings.dismissedHints.contains(selected.rawValue) {
+            Button {
+                withAnimation(Theme.Motion.content) {
+                    settings.dismissHint(for: selected)
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "rectangle.landscape.rotate")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(hint)
+                        .font(.system(size: 12.5))
+                        .multilineTextAlignment(.leading)
+                    Spacer(minLength: 0)
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .foregroundStyle(Theme.Color.secondaryText)
+                .padding(.horizontal, 16)
+            }
+            .buttonStyle(.plain)
+            .transition(.opacity)
+        }
     }
 
     // MARK: - Centre

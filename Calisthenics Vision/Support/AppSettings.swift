@@ -155,6 +155,19 @@ final class AppSettings {
     /// Flipping is a control on the Train screen, not a stored preference.
     var cameraPosition: AVCaptureDevice.Position { .front }
 
+    // MARK: - Camera-angle hints
+
+    /// Movements (by raw value) whose one-time framing tip has already been
+    /// shown and dismissed. A hint, never a gate — dismissing it changes
+    /// nothing about how the movement is tracked.
+    var dismissedHints: Set<String> {
+        didSet { defaults.set(Array(dismissedHints), forKey: Keys.dismissedHints) }
+    }
+
+    func dismissHint(for movement: Movement) {
+        dismissedHints.insert(movement.rawValue)
+    }
+
     private let defaults: UserDefaults
 
     private enum Keys {
@@ -173,6 +186,7 @@ final class AppSettings {
         static let pinnedMovements = "settings.pinnedMovements"
         static let overlayStyle = "settings.overlayStyle"
         static let reviewOverlay = "settings.reviewOverlayMode"
+        static let dismissedHints = "settings.dismissedHints"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -205,6 +219,7 @@ final class AppSettings {
             // completely rather than merging with this default.
             pinnedMovements = Movement.allCases.filter(\.isTrackingSupported)
         }
+        dismissedHints = Set(defaults.array(forKey: Keys.dismissedHints) as? [String] ?? [])
     }
 
     #if DEBUG
@@ -215,7 +230,7 @@ final class AppSettings {
                     Keys.audioCoaching, Keys.speaksReps, Keys.speaksHoldTime,
                     Keys.speaksFormCues, Keys.speaksCountdown,
                     Keys.holdInterval, Keys.repDepth, Keys.pinnedMovements,
-                    Keys.overlayStyle, Keys.reviewOverlay] {
+                    Keys.overlayStyle, Keys.reviewOverlay, Keys.dismissedHints] {
             defaults.removeObject(forKey: key)
         }
         countdownSeconds = 3
@@ -233,6 +248,7 @@ final class AppSettings {
         overlayStyle = .outline
         reviewOverlayMode = .skeleton
         pinnedMovements = Movement.allCases.filter(\.isTrackingSupported)
+        dismissedHints = []
     }
     #endif
 }
