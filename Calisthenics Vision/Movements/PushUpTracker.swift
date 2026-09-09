@@ -18,8 +18,20 @@
 //  one still bearing weight. Take their midpoint and lifting a hand drags the
 //  reference up with it, which is the same exploit wearing a hat.
 //
-//  Reported in torso lengths so it means the same thing on any size of body:
-//  about 1.0 at the top of a push-up, about 0.25 with the chest at the floor.
+//  Reported as a fraction of the person's own arm length, which is the
+//  normaliser that actually cancels: the numerator and the denominator are
+//  the same limbs, so body size divides straight out and only forearm-to-
+//  upper-arm proportion is left, which barely varies between people.
+//
+//  **Your shoulders never get near the floor, even with your chest flat on
+//  it.** The forearm stays vertical through a push-up, so the elbow sits a
+//  forearm's length up and the shoulder sits at about elbow height. Chest on
+//  the floor reads ~0.39 of an arm length, not ~0. Scaling the meter as if it
+//  reached zero put a full-depth rep at about half the bar, and put the
+//  counting standard somewhere nobody could reach -- which then fired the
+//  can't-reach-the-standard rescue on every set and made the line wander.
+//  The measured numbers are ~0.93 at the top and ~0.39 chest-to-floor.
+//
 //  The elbow is still measured, but only to be shown -- nothing counts on it.
 //
 //  State machine: TOP -> BOTTOM -> TOP counts one rep. A rep only counts on
@@ -37,19 +49,19 @@ import simd
 
 struct PushUpTracker: MovementTracker {
 
-    // Everything below is in **torso lengths of chest height above the
-    // planted hand** — see `chestHeight`. Roughly 1.0 at the top of a
-    // push-up and 0.25 with the chest at the floor, on any size of body.
+    // Everything below is in **arm lengths of chest height above the planted
+    // hand** — see `chestHeight`. Roughly 0.93 at the top of a push-up and
+    // 0.39 with the chest on the floor, on any size of body.
     //
     // The seed only arms the state machine; every gate that decides anything
     // is measured off the person (POSE.md Law 3).
-    var lockoutHeight: Double = 0.85
+    var lockoutHeight: Double = 0.80
     var maxHipDeviation: Double = 15
 
     /// Total travel required before the motion is treated as a rep at all,
     /// so fidgeting in position can't calibrate its way into counting.
-    /// A full push-up covers about 0.75, so this is over half of one.
-    var minimumRange: Double = 0.35
+    /// A full push-up covers about 0.54, so this is over half of one.
+    var minimumRange: Double = 0.28
     /// How close to full extension counts as locked out, as a fraction of
     /// your own range. This is what separates consecutive reps.
     var topGateFraction: Double = 0.25
@@ -60,14 +72,14 @@ struct PushUpTracker: MovementTracker {
     /// discovered.
     var standardDepthFraction: Double = 0.80
 
-    /// How close to your own measured bottom counts, in torso lengths.
+    /// How close to your own measured bottom counts, in arm lengths.
     ///
     /// Applies **only** where a rep has shown the standard is out of reach —
     /// see `bottomThreshold`. That condition is the whole point: it's what
     /// stops someone who can't get their chest near the floor from counting
     /// zero reps forever (POSE.md Law 3), without loosening the gate under
     /// everyone who was already clearing it.
-    var depthTolerance: Double = 0.12
+    var depthTolerance: Double = 0.08
 
     /// Landmarks below this confidence are ignored — an occluded arm reports
     /// a position, just not a trustworthy one.
@@ -221,14 +233,20 @@ struct PushUpTracker: MovementTracker {
         return settledMin + depthTolerance
     }
 
-    /// Ends of the scale the depth meter is drawn on: a straight arm at the
-    /// top, chest-to-floor at the bottom. The deep end is a *full* rep, not
-    /// an unreachable one — set below where anyone actually goes, everyone's
-    /// travel bunches into the middle of the bar and drags the gate line up
-    /// with it. Drawing bounds, not gates — see
-    /// `DepthGauge` for why those are different things.
-    var extendedHeight: Double = 1.05
-    var floorHeight: Double = 0.20
+    /// Ends of the scale the depth meter is drawn on, in arm lengths above
+    /// the planted hand: arms straight at the top, chest on the floor at the
+    /// bottom.
+    ///
+    /// **The deep end is where a real chest-to-floor rep actually lands
+    /// (~0.39), not zero.** The shoulder can't reach the floor — the forearm
+    /// stays vertical and holds it a forearm's length up — so scaling as if
+    /// it could put a full-depth rep at barely half the bar, and put the
+    /// counting standard somewhere nobody reaches. That then fired the
+    /// can't-reach-the-standard rescue on every set, which is what kept the
+    /// line moving. Drawing bounds, not gates — see `DepthGauge` for why
+    /// those are different things.
+    var extendedHeight: Double = 1.0
+    var floorHeight: Double = 0.35
 
     /// Always present. Only the fill depends on being able to see you; the
     /// bar and its line are there from the first frame of the recording, and
@@ -327,9 +345,9 @@ struct PushUpTracker: MovementTracker {
     /// narrow to have been trustworthy in the first place, so there's nothing
     /// left worth forgetting.
     private mutating func observeRange(_ height: Double) {
-        // 0.005 torso lengths per frame ≈ a fifth of a range per second. A
-        // real rep sweeps its range in about a second, well above this; a
-        // smoothed, stationary landmark sits well under it.
+        // 0.005 arm lengths per frame ≈ a fifth of a range per second. A real
+        // rep sweeps its range in about a second, well above this; a smoothed,
+        // stationary landmark sits well under it.
         let moved = abs(height - (lastRangeAngle ?? height)) > 0.005
         lastRangeAngle = height
 
@@ -435,8 +453,8 @@ struct PushUpTracker: MovementTracker {
     /// Dead band around a gate, scaled to the person's range so it means the
     /// same thing whether they travel 50° or 100°.
     private var dwellMargin: Double {
-        guard let range = workingRange else { return 0.09 }
-        return max(0.045, range * 0.1)
+        guard let range = workingRange else { return 0.08 }
+        return max(0.04, range * 0.1)
     }
 
     /// 0 at the top of the range, 1 at full depth.
@@ -508,16 +526,22 @@ struct PushUpTracker: MovementTracker {
 
     // MARK: - Measurements
 
-    /// How far the chest rides above the hands, in torso lengths.
+    /// How far the chest rides above the hands, as a fraction of arm length.
     ///
     /// This is the measurement a push-up actually is, and the reason the
     /// tracker no longer counts anything off the elbow — see the file header.
     ///
     /// The ground reference is the **lower** of the two wrists: the hand
     /// still bearing weight. Using their midpoint let one lifted hand pull
-    /// the reference up and fake a whole rep. Normalised by torso length so
-    /// the numbers mean the same thing on any size of body, and measured
-    /// from world landmarks so they hold at any camera angle (POSE.md Law 1).
+    /// the reference up and fake a whole rep.
+    ///
+    /// Normalised by the person's own arm — shoulder to elbow to wrist, which
+    /// is a constant whatever the elbow is doing — so body size cancels
+    /// exactly rather than approximately. Torso length was the first choice
+    /// and it's a worse one: it leaves the arm-to-torso ratio in the answer,
+    /// and that varies enough between people to move the counting standard.
+    /// Measured from world landmarks, so it holds at any camera angle
+    /// (POSE.md Law 1).
     func chestHeight(_ pose: Pose) -> Double? {
         let confidence = min(
             self.confidence(pose, .leftShoulder, .rightShoulder),
@@ -525,17 +549,26 @@ struct PushUpTracker: MovementTracker {
         )
         guard confidence >= minConfidence,
               let shoulder = Self.midpoint(pose, .leftShoulder, .rightShoulder),
-              let hip = Self.midpoint(pose, .leftHip, .rightHip),
               let leftWrist = pose.worldPoint(.leftWrist),
               let rightWrist = pose.worldPoint(.rightWrist)
         else { return nil }
 
-        let torsoLength = simd_length(hip - shoulder)
-        guard torsoLength > 0.15 else { return nil }
+        // World y runs downward, so the planted hand is the *larger* y. The
+        // whole arm is taken from that side — reference and normaliser both.
+        // Averaging the two arms instead leaves the lifted one in the
+        // denominator, and the exploit walks straight back in through it.
+        let plantedIsLeft = leftWrist.y > rightWrist.y
+        let ground = plantedIsLeft ? leftWrist.y : rightWrist.y
+        guard let plantedShoulder = pose.worldPoint(plantedIsLeft ? .leftShoulder : .rightShoulder),
+              let plantedElbow = pose.worldPoint(plantedIsLeft ? .leftElbow : .rightElbow)
+        else { return nil }
 
-        // World y runs downward, so the planted hand is the *larger* y.
-        let ground = max(leftWrist.y, rightWrist.y)
-        return (ground - shoulder.y) / torsoLength
+        let plantedWrist = plantedIsLeft ? leftWrist : rightWrist
+        let armLength = simd_length(plantedElbow - plantedShoulder)
+            + simd_length(plantedWrist - plantedElbow)
+        guard armLength > 0.15 else { return nil }
+
+        return (ground - shoulder.y) / armLength
     }
 
     static func midpoint(_ pose: Pose, _ a: PoseJoint, _ b: PoseJoint) -> SIMD3<Double>? {

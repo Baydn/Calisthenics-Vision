@@ -211,8 +211,25 @@ the body doesn't move at all, and every one of those counted. You could lie in
 a plank and rack up a hundred by waving.
 
 Ask what the movement is defined by, then find the most direct measurement of
-*that*. `PushUpTracker` now counts on how far the shoulders ride above the
-hands, in torso lengths.
+*that*. `PushUpTracker` counts on how far the shoulders ride above the hands.
+
+**Then find out what that measurement actually reads before scaling anything
+to it.** Your shoulders never approach the floor, even with your chest flat
+on it: the forearm stays vertical through a push-up, so the elbow sits a
+forearm's length up and the shoulder sits at about elbow height. Chest on the
+floor reads ~0.39 of an arm length, not ~0. Scaling the meter as though it
+reached zero showed a full-depth rep at about half the bar — and put the
+counting standard below anything reachable, which fired the
+can't-reach-the-standard rescue on every set and set the line wandering
+again. One wrong constant, both complaints.
+
+**Normalise by the limb the measurement is made of.** Arm length — shoulder
+to elbow to wrist, a constant whatever the elbow does — divides body size out
+exactly, because it's the same limbs in numerator and denominator. Torso
+length was the first choice and it leaves the arm-to-torso ratio in the
+answer, which varies enough between people to move where the standard lands.
+Take the whole arm from the *planted* side too: average the two and the
+lifted one is back in the denominator, and the exploit walks in through it.
 
 When the honest measurement needs a ground reference, the part of the body
 that's on the ground is it — and pick the part that **stays** there. The lower
@@ -495,7 +512,7 @@ For a segmented hold additionally: several attempts recorded separately, rest
 between them uncounted, a brief dropout not splitting one hold, a sub-second
 blip discarded along with its time, and finishing mid-hold keeping it.
 
-Current coverage: **38 push-up, 46 handstand, 24 pull-up, 21 squat, 25 dip, 148 planche, planche push-up, depth meter, rep calibration and the hand-lift exploit, 17 body-plausibility checks (319 total)**, all passing.
+Current coverage: **38 push-up, 46 handstand, 24 pull-up, 21 squat, 25 dip, 148 planche, planche push-up, depth meter, rep calibration and the hand-lift exploit, 17 body-plausibility checks (319 total)**, all passing. Fixtures for the push-up build a real arm from limb lengths — an earlier one placed the elbow at half the chest height, so its "arm" shrank as the chest descended and the measured ratio never moved.
 
 A fixture that shares a bug with the code proves nothing — the aspect-ratio
 distortion bug passed 14 tests because the fixtures were generated in the
@@ -532,6 +549,7 @@ Every rule above, and the bug that earned it.
 | A set of short holds reported as one long hold | Personal records read the session total rather than the best attempt | §8 |
 | A push-up lockout timed as a planche | The gate assumed a push-up's hip rides down at hand level. It doesn't — only the hands and toes are on the floor, so the body is a diagonal and the hip sits *midway*, which passed the test. The harness fixture was built from the same wrong picture, so 38 checks agreed with it | §12 |
 | Lifting one hand off the floor and putting it back counted as a push-up, repeatably | Reps counted on the elbow angle, which a hand sweeps through its whole range with the body still. Count the movement's own definition — chest height above the planted hand | Law 9 |
+| A chest-to-floor push-up filled only half the depth meter, and the line kept moving | The meter's deep end assumed the shoulder reaches the floor. It can't — the forearm holds it a forearm's length up — so a full rep read ~0.44 against a scale bottoming at 0.20, and the standard sat below anything reachable, firing the rescue path every set | Law 9 |
 | Reps counted while visibly short of the depth line | The gate was `max(standard, bottom + tolerance)`, which loosened for *everyone* rather than only for people who couldn't reach the standard: clear it at 95° against a 108° standard and the max still moved the gate to 110°. The line must be the gate, not a stand-in | §6 |
 | The depth line appeared partway through the set and vanished when the person stepped out of shot | It was drawn from calibrated state, so it existed only once a rep had taught it and only while a pose was visible. A target has to precede the aiming: it's a fixed standard now, and only the fill depends on seeing anyone | §6 |
 | The depth line only appeared on the second rep, and the first rep never counted | Arming needed a calibrated range, but the range only grows once you move — so the counter armed halfway down the first descent, too late to leave a top. The seeded lockout now arms it | §6 |
@@ -550,12 +568,12 @@ Change these deliberately; each has a reason above.
 
 **Pose** — verticality gate `0.7` · depth-dominant `0.6` · EMA factor `0.6`
 
-**PushUpTracker** — counts on **chest height above the planted hand, in
-torso lengths** (~1.0 at the top, ~0.25 chest-to-floor), not on the elbow ·
-`lockoutHeight 0.85` (seed; arms the state machine) · `maxHipDeviation 15` ·
-`minimumRange 0.35` · `standardDepthFraction 0.80` of the bar (the drawn
-line) · `depthTolerance 0.12`, applied only when the standard is out of
-reach · `topGateFraction 0.25` · meter scale `1.05→0.20` · `minConfidence 0.5` · `formConfidence 0.8` ·
+**PushUpTracker** — counts on **chest height above the planted hand, as a
+fraction of that arm's length** (~0.95 at the top, ~0.39 chest-to-floor), not
+on the elbow · `lockoutHeight 0.80` (seed; arms the state machine) ·
+`maxHipDeviation 15` · `minimumRange 0.28` · `standardDepthFraction 0.80` of
+the bar (the drawn line) · `depthTolerance 0.08`, applied only when the
+standard is out of reach · `topGateFraction 0.25` · meter scale `1.0→0.35` · `minConfidence 0.5` · `formConfidence 0.8` ·
 `maxBodyLineDepth 0.6` · `framesToFlag 12` · range decay `0.05`/frame
 
 **SquatTracker** — `standAngle 168` `bottomAngle 95` (seeds only) ·
