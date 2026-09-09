@@ -4,10 +4,27 @@
 //
 //  Push-up rep counting. Measurement rules: POSE.md.
 //
+//  **A push-up is your chest going down, not your elbow bending.** This ran
+//  off the elbow angle for a long time, and it was exploitable in about the
+//  most embarrassing way available: lift one hand off the floor and put it
+//  back, and the elbow sweeps its whole range with your body completely
+//  still. Every rep of that counted. You could lie in a plank and rack up a
+//  hundred by waving.
+//
+//  The elbow was only ever a proxy for the thing that matters, and the thing
+//  that matters is measurable directly: how far the shoulders ride above the
+//  hands. The hands are on the floor in a push-up, so they *are* the ground
+//  reference -- and it is specifically the **lower** of the two wrists, the
+//  one still bearing weight. Take their midpoint and lifting a hand drags the
+//  reference up with it, which is the same exploit wearing a hat.
+//
+//  Reported in torso lengths so it means the same thing on any size of body:
+//  about 1.0 at the top of a push-up, about 0.25 with the chest at the floor.
+//  The elbow is still measured, but only to be shown -- nothing counts on it.
+//
 //  State machine: TOP -> BOTTOM -> TOP counts one rep. A rep only counts on
 //  the way back up through lockout, so descending halfway and giving up never
-//  scores. The gates are fractions into the person's own observed elbow range
-//  (POSE.md Law 3), never fixed angles.
+//  scores. Gates are calibrated to the person (POSE.md Law 3).
 //
 //  Hip sag is flagged when shoulder-hip-ankle bends more than 15 degrees off
 //  straight -- but only while posture is actually measurable (POSE.md Law 5),
@@ -16,34 +33,25 @@
 
 import CoreGraphics
 import Foundation
+import simd
 
 struct PushUpTracker: MovementTracker {
 
-    // Nominal thresholds from SPEC.md §2. These are the *starting* values; once
-    // enough motion has been seen the tracker calibrates to the person's own
-    // range instead (see `topThreshold`/`bottomThreshold`).
+    // Everything below is in **torso lengths of chest height above the
+    // planted hand** — see `chestHeight`. Roughly 1.0 at the top of a
+    // push-up and 0.25 with the chest at the floor, on any size of body.
     //
-    // Fixed angles don't survive contact with real bodies: arm proportions,
-    // how far someone locks out, how deep they go, and the residual error in a
-    // 3D landmark estimate all shift the numbers. Demanding a literal 160°
-    // lockout means a person whose arms read 150° at the top counts zero reps
-    // forever, which is precisely the failure this replaces.
-    var lockoutAngle: Double = 160
-    var bottomAngle: Double = 90
+    // The seed only arms the state machine; every gate that decides anything
+    // is measured off the person (POSE.md Law 3).
+    var lockoutHeight: Double = 0.85
     var maxHipDeviation: Double = 15
 
-    /// Total elbow travel required before the motion is treated as a rep at
-    /// all, so fidgeting in position can't calibrate its way into counting.
-    var minimumRange: Double = 45
-    /// How far down into the range you must travel for the rep to count, as a
-    /// fraction of your own range. Deliberately loose: demanding near-maximum
-    /// depth every rep means a beginner sees nothing counted at all, and an
-    /// uncounted rep reads as "the app is broken" rather than "go deeper".
-    /// Depth coaching belongs in form feedback, not in withholding the count.
-    var bottomGateFraction: Double = 0.42
-    /// How close to full extension counts as locked out. Tighter than the
-    /// bottom gate, since the top of a push-up is unambiguous and this is what
-    /// separates consecutive reps.
+    /// Total travel required before the motion is treated as a rep at all,
+    /// so fidgeting in position can't calibrate its way into counting.
+    /// A full push-up covers about 0.75, so this is over half of one.
+    var minimumRange: Double = 0.35
+    /// How close to full extension counts as locked out, as a fraction of
+    /// your own range. This is what separates consecutive reps.
     var topGateFraction: Double = 0.25
 
     /// Where the counting line sits, as a fraction of the meter's bar. This
@@ -52,14 +60,14 @@ struct PushUpTracker: MovementTracker {
     /// discovered.
     var standardDepthFraction: Double = 0.80
 
-    /// How close to your own measured bottom counts, in degrees.
+    /// How close to your own measured bottom counts, in torso lengths.
     ///
     /// Applies **only** where a rep has shown the standard is out of reach —
     /// see `bottomThreshold`. That condition is the whole point: it's what
-    /// stops someone whose elbow reads 120° at their deepest from counting
+    /// stops someone who can't get their chest near the floor from counting
     /// zero reps forever (POSE.md Law 3), without loosening the gate under
     /// everyone who was already clearing it.
-    var depthTolerance: Double = 15
+    var depthTolerance: Double = 0.12
 
     /// Landmarks below this confidence are ignored — an occluded arm reports
     /// a position, just not a trustworthy one.
@@ -90,8 +98,8 @@ struct PushUpTracker: MovementTracker {
         var d = TrackerDiagnostics()
         d.isReady = isInPosition
         d.readyLabel = isInPosition ? "in position" : "not in position"
-        d.primaryAngleLabel = "elbow"
-        d.primaryAngle = lastElbowAngle
+        d.primaryAngleLabel = "chest"
+        d.primaryAngle = lastChestHeight.map { $0 * 100 }
         d.secondaryAngleLabel = "hip"
         d.secondaryAngle = lastHipAngle
         if !isCalibrated {
@@ -99,7 +107,7 @@ struct PushUpTracker: MovementTracker {
             d.noteIsWarning = true
         } else {
             d.note = String(
-                format: "gates %.0f°/%.0f° · form %@",
+                format: "gates %.2f/%.2f · form %@",
                 bottomThreshold, topThreshold,
                 isFormMeasurable ? "on" : "off"
             )
@@ -115,8 +123,10 @@ struct PushUpTracker: MovementTracker {
     /// is end-on to the body or the legs aren't visible — reps still count.
     private(set) var isFormMeasurable = false
 
-    /// Latest measurements, for on-device diagnostics.
+    /// Latest measurements. `lastChestHeight` is the one that counts; the
+    /// elbow is shown but decides nothing.
     private(set) var lastElbowAngle: Double?
+    private(set) var lastChestHeight: Double?
     private(set) var lastHipAngle: Double?
 
     /// Elbow extremes seen so far, and the resulting gates. Surfaced so the
@@ -178,15 +188,15 @@ struct PushUpTracker: MovementTracker {
             return settledMax - range * topGateFraction
         }
         guard isCalibrated, let observedMax, let range = observedRange else {
-            return lockoutAngle
+            return lockoutHeight
         }
         return observedMax - range * topGateFraction
     }
 
     /// The angle the standard sits at, from the fraction of the bar it's
     /// drawn at.
-    var standardDepthAngle: Double {
-        extendedAngle - standardDepthFraction * (extendedAngle - floorAngle)
+    var standardDepthHeight: Double {
+        extendedHeight - standardDepthFraction * (extendedHeight - floorHeight)
     }
 
     /// Angle at or below which the rep counts as deep enough. **This is what
@@ -205,8 +215,8 @@ struct PushUpTracker: MovementTracker {
     /// zero forever (POSE.md Law 3) — and there it moves the drawn line too,
     /// so the two never disagree.
     var bottomThreshold: Double {
-        guard let settledMin, settledMin > standardDepthAngle else {
-            return standardDepthAngle
+        guard let settledMin, settledMin > standardDepthHeight else {
+            return standardDepthHeight
         }
         return settledMin + depthTolerance
     }
@@ -217,8 +227,8 @@ struct PushUpTracker: MovementTracker {
     /// travel bunches into the middle of the bar and drags the gate line up
     /// with it. Drawing bounds, not gates — see
     /// `DepthGauge` for why those are different things.
-    var extendedAngle: Double = 180
-    var floorAngle: Double = 90
+    var extendedHeight: Double = 1.05
+    var floorHeight: Double = 0.20
 
     /// Always present. Only the fill depends on being able to see you; the
     /// bar and its line are there from the first frame of the recording, and
@@ -229,26 +239,28 @@ struct PushUpTracker: MovementTracker {
     /// "the rep counts", which is the only job the line has.
     var depthGauge: DepthGauge? {
         DepthGauge(
-            depth: (isInPosition ? lastElbowAngle : nil).map(onScale),
+            depth: (isInPosition ? lastChestHeight : nil).map(onScale),
             countsAt: onScale(bottomThreshold)
         )
     }
 
-    private func onScale(_ angle: Double) -> Double {
-        let span = extendedAngle - floorAngle
+    private func onScale(_ height: Double) -> Double {
+        let span = extendedHeight - floorHeight
         guard span > 0 else { return 0 }
-        return min(1, max(0, (extendedAngle - angle) / span))
+        return min(1, max(0, (extendedHeight - height) / span))
     }
 
     mutating func update(pose: Pose?, timestampMs: Int) -> MovementEvent? {
         guard let pose else {
             isInPosition = false
             lastElbowAngle = nil
+            lastChestHeight = nil
             lastHipAngle = nil
             return nil
         }
 
         lastElbowAngle = elbowAngle(pose)
+        lastChestHeight = chestHeight(pose)
         lastHipAngle = pose.angle(at: .leftHip, from: .leftShoulder, to: .leftAnkle)
             ?? pose.angle(at: .rightHip, from: .rightShoulder, to: .rightAnkle)
 
@@ -270,16 +282,16 @@ struct PushUpTracker: MovementTracker {
                 }
             }
         }
-        guard horizontal, let elbow = lastElbowAngle else { return nil }
+        guard horizontal, let height = lastChestHeight else { return nil }
 
-        observeRange(elbow)
-        repMin = min(elbow, repMin ?? elbow)
-        repMax = max(elbow, repMax ?? elbow)
-        settleDepth(reaching: elbow)
-        progress.repProgress = normalizedDepth(elbow)
+        observeRange(height)
+        repMin = min(height, repMin ?? height)
+        repMax = max(height, repMax ?? height)
+        settleDepth(reaching: height)
+        progress.repProgress = normalizedDepth(height)
 
         if let event = checkForm(pose) { return event }
-        return advance(elbow: elbow)
+        return advance(height: height)
     }
 
     mutating func reset() {
@@ -289,6 +301,7 @@ struct PushUpTracker: MovementTracker {
         observedMin = nil
         observedMax = nil
         lastRangeAngle = nil
+        lastChestHeight = nil
         repMin = nil
         repMax = nil
         settledMin = nil
@@ -313,24 +326,24 @@ struct PushUpTracker: MovementTracker {
     /// **And it floors at `minimumRange`.** Below that the range is too
     /// narrow to have been trustworthy in the first place, so there's nothing
     /// left worth forgetting.
-    private mutating func observeRange(_ elbow: Double) {
-        // 0.5°/frame ≈ 15°/s. A real rep sweeps its range in about a second,
-        // an order of magnitude above this; a smoothed, stationary landmark
-        // sits well under it.
-        let moved = abs(elbow - (lastRangeAngle ?? elbow)) > 0.5
-        lastRangeAngle = elbow
+    private mutating func observeRange(_ height: Double) {
+        // 0.005 torso lengths per frame ≈ a fifth of a range per second. A
+        // real rep sweeps its range in about a second, well above this; a
+        // smoothed, stationary landmark sits well under it.
+        let moved = abs(height - (lastRangeAngle ?? height)) > 0.005
+        lastRangeAngle = height
 
         // Both ends move each frame, so half the slack is the most either can
         // take without carrying the range below the floor.
         let slack = (observedRange ?? 0) - minimumRange
-        let decay = moved && slack > 0 ? min(0.05, slack / 2) : 0
-        observedMax = max(elbow, (observedMax ?? elbow) - decay)
-        observedMin = min(elbow, (observedMin ?? elbow) + decay)
+        let decay = moved && slack > 0 ? min(0.0005, slack / 2) : 0
+        observedMax = max(height, (observedMax ?? height) - decay)
+        observedMin = min(height, (observedMin ?? height) + decay)
     }
 
     // MARK: - Rep phases
 
-    private mutating func advance(elbow: Double) -> MovementEvent? {
+    private mutating func advance(height: Double) -> MovementEvent? {
         let top = topThreshold
         let bottom = bottomThreshold
 
@@ -343,28 +356,28 @@ struct PushUpTracker: MovementTracker {
             // the line waited for the second one. The seeded lockout is safe
             // here precisely because it only *starts* the state machine:
             // every gate that decides anything is still measured off you.
-            if elbow >= lockoutAngle || (isCalibrated && elbow >= top) {
-                enterTop(at: elbow)
+            if height >= lockoutHeight || (isCalibrated && height >= top) {
+                enterTop(at: height)
             }
 
         case .top:
             // Require a clear departure before believing a rep has started;
             // jitter sitting on the gate shouldn't advance us.
-            if elbow < top - dwellMargin { phase = .descending }
+            if height < top - dwellMargin { phase = .descending }
 
         case .descending:
-            if elbow <= bottom {
+            if height <= bottom {
                 phase = .bottom
-            } else if elbow >= top {
+            } else if height >= top {
                 // Went back up without reaching depth — not a rep.
-                enterTop(at: elbow)
+                enterTop(at: height)
             }
 
         case .bottom:
-            if elbow >= top {
+            if height >= top {
                 progress.reps += 1
-                settleTop(elbow)
-                enterTop(at: elbow)
+                settleTop(height)
+                enterTop(at: height)
                 return .repCompleted(total: progress.reps)
             }
         }
@@ -376,10 +389,10 @@ struct PushUpTracker: MovementTracker {
     /// a descent is only recognised once you've already dropped past the
     /// dwell margin, so measuring from there would shave that much off the
     /// top of every rep and quietly under-report your range.
-    private mutating func enterTop(at elbow: Double) {
+    private mutating func enterTop(at height: Double) {
         phase = .top
-        repMin = elbow
-        repMax = elbow
+        repMin = height
+        repMax = height
     }
 
     /// Sets the depth target at the bottom of the first descent — the moment
@@ -393,13 +406,13 @@ struct PushUpTracker: MovementTracker {
     ///
     /// It then holds for the set. Your first honest rep is the target, and a
     /// target that moves is not one.
-    private mutating func settleDepth(reaching elbow: Double) {
+    private mutating func settleDepth(reaching height: Double) {
         guard let low = repMin, let high = repMax,
               high - low >= minimumRange,
               low < (settledMin ?? .infinity),
               // Turned around: on the way back up from the bottom, rather
               // than still descending.
-              elbow > low + 2
+              height > low + 0.02
         else { return }
 
         settledMin = low
@@ -413,8 +426,8 @@ struct PushUpTracker: MovementTracker {
     /// and because nothing draws this, so it can move without anyone seeing
     /// it. Left fixed, it demanded you push back up to your setup on every
     /// rep before one would close.
-    private mutating func settleTop(_ elbow: Double) {
-        let high = max(repMax ?? elbow, elbow)
+    private mutating func settleTop(_ height: Double) {
+        let high = max(repMax ?? height, height)
         guard let low = settledMin, high - low >= minimumRange else { return }
         settledMax = high
     }
@@ -422,17 +435,17 @@ struct PushUpTracker: MovementTracker {
     /// Dead band around a gate, scaled to the person's range so it means the
     /// same thing whether they travel 50° or 100°.
     private var dwellMargin: Double {
-        guard let range = workingRange else { return 10 }
-        return max(5, range * 0.1)
+        guard let range = workingRange else { return 0.09 }
+        return max(0.045, range * 0.1)
     }
 
     /// 0 at the top of the range, 1 at full depth.
-    private func normalizedDepth(_ elbow: Double) -> Double {
-        let high = observedMax ?? lockoutAngle
-        let low = observedMin ?? bottomAngle
+    private func normalizedDepth(_ height: Double) -> Double {
+        let high = observedMax ?? extendedHeight
+        let low = observedMin ?? floorHeight
         let span = high - low
         guard span > 0 else { return 0 }
-        return min(1, max(0, (high - elbow) / span))
+        return min(1, max(0, (high - height) / span))
     }
 
     // MARK: - Form
@@ -495,8 +508,43 @@ struct PushUpTracker: MovementTracker {
 
     // MARK: - Measurements
 
+    /// How far the chest rides above the hands, in torso lengths.
+    ///
+    /// This is the measurement a push-up actually is, and the reason the
+    /// tracker no longer counts anything off the elbow — see the file header.
+    ///
+    /// The ground reference is the **lower** of the two wrists: the hand
+    /// still bearing weight. Using their midpoint let one lifted hand pull
+    /// the reference up and fake a whole rep. Normalised by torso length so
+    /// the numbers mean the same thing on any size of body, and measured
+    /// from world landmarks so they hold at any camera angle (POSE.md Law 1).
+    func chestHeight(_ pose: Pose) -> Double? {
+        let confidence = min(
+            self.confidence(pose, .leftShoulder, .rightShoulder),
+            max(self.confidence(pose, .leftWrist), self.confidence(pose, .rightWrist))
+        )
+        guard confidence >= minConfidence,
+              let shoulder = Self.midpoint(pose, .leftShoulder, .rightShoulder),
+              let hip = Self.midpoint(pose, .leftHip, .rightHip),
+              let leftWrist = pose.worldPoint(.leftWrist),
+              let rightWrist = pose.worldPoint(.rightWrist)
+        else { return nil }
+
+        let torsoLength = simd_length(hip - shoulder)
+        guard torsoLength > 0.15 else { return nil }
+
+        // World y runs downward, so the planted hand is the *larger* y.
+        let ground = max(leftWrist.y, rightWrist.y)
+        return (ground - shoulder.y) / torsoLength
+    }
+
+    static func midpoint(_ pose: Pose, _ a: PoseJoint, _ b: PoseJoint) -> SIMD3<Double>? {
+        guard let pa = pose.worldPoint(a), let pb = pose.worldPoint(b) else { return nil }
+        return (pa + pb) / 2
+    }
+
     /// Elbow angle from whichever arm is more visible — filming side-on means
-    /// one arm is usually occluded by the body.
+    /// one arm is usually occluded by the body. Shown, never counted on.
     private func elbowAngle(_ pose: Pose) -> Double? {
         let left = confidence(pose, .leftShoulder, .leftElbow, .leftWrist)
         let right = confidence(pose, .rightShoulder, .rightElbow, .rightWrist)

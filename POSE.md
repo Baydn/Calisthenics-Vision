@@ -202,6 +202,23 @@ the skeleton stays stuck red because the legs left the frame.
 
 ## 6. Thresholds
 
+### Law 9 — Count the thing the movement *is*, not a proxy for it.
+
+A push-up is the chest going down. The elbow angle correlates with that, and
+counting on it shipped an exploit anyone could find in a minute: **lift one
+hand off the floor and put it back**. The elbow sweeps its entire range while
+the body doesn't move at all, and every one of those counted. You could lie in
+a plank and rack up a hundred by waving.
+
+Ask what the movement is defined by, then find the most direct measurement of
+*that*. `PushUpTracker` now counts on how far the shoulders ride above the
+hands, in torso lengths.
+
+When the honest measurement needs a ground reference, the part of the body
+that's on the ground is it — and pick the part that **stays** there. The lower
+of the two wrists is the planted hand; their midpoint is not, because lifting
+one drags the midpoint up with it and reinstates the same exploit.
+
 ### Law 3 — Thresholds calibrate to the person. Never ship a fixed angle.
 
 Fixed gates do not survive contact with real bodies. Arm proportions, how far
@@ -478,7 +495,7 @@ For a segmented hold additionally: several attempts recorded separately, rest
 between them uncounted, a brief dropout not splitting one hold, a sub-second
 blip discarded along with its time, and finishing mid-hold keeping it.
 
-Current coverage: **38 push-up, 46 handstand, 24 pull-up, 21 squat, 25 dip, 147 planche, planche push-up, depth-meter scale and rep calibration, 17 body-plausibility checks (318 total)**, all passing.
+Current coverage: **38 push-up, 46 handstand, 24 pull-up, 21 squat, 25 dip, 148 planche, planche push-up, depth meter, rep calibration and the hand-lift exploit, 17 body-plausibility checks (319 total)**, all passing.
 
 A fixture that shares a bug with the code proves nothing — the aspect-ratio
 distortion bug passed 14 tests because the fixtures were generated in the
@@ -514,6 +531,7 @@ Every rule above, and the bug that earned it.
 | Skeleton flashing onto furniture and empty rooms | Any non-empty landmark array was accepted — no geometry check, no confidence check, no persistence requirement | §3b |
 | A set of short holds reported as one long hold | Personal records read the session total rather than the best attempt | §8 |
 | A push-up lockout timed as a planche | The gate assumed a push-up's hip rides down at hand level. It doesn't — only the hands and toes are on the floor, so the body is a diagonal and the hip sits *midway*, which passed the test. The harness fixture was built from the same wrong picture, so 38 checks agreed with it | §12 |
+| Lifting one hand off the floor and putting it back counted as a push-up, repeatably | Reps counted on the elbow angle, which a hand sweeps through its whole range with the body still. Count the movement's own definition — chest height above the planted hand | Law 9 |
 | Reps counted while visibly short of the depth line | The gate was `max(standard, bottom + tolerance)`, which loosened for *everyone* rather than only for people who couldn't reach the standard: clear it at 95° against a 108° standard and the max still moved the gate to 110°. The line must be the gate, not a stand-in | §6 |
 | The depth line appeared partway through the set and vanished when the person stepped out of shot | It was drawn from calibrated state, so it existed only once a rep had taught it and only while a pose was visible. A target has to precede the aiming: it's a fixed standard now, and only the fill depends on seeing anyone | §6 |
 | The depth line only appeared on the second rep, and the first rep never counted | Arming needed a calibrated range, but the range only grows once you move — so the counter armed halfway down the first descent, too late to leave a top. The seeded lockout now arms it | §6 |
@@ -532,11 +550,12 @@ Change these deliberately; each has a reason above.
 
 **Pose** — verticality gate `0.7` · depth-dominant `0.6` · EMA factor `0.6`
 
-**PushUpTracker** — `lockoutAngle 160` `bottomAngle 90` (seeds; the lockout
-also arms the state machine) · `maxHipDeviation 15` · `minimumRange 45` ·
-`standardDepthFraction 0.80` of the bar (the drawn line) · `depthTolerance
-15°` off your own bottom, applied only when kinder · `topGateFraction 0.25` ·
-meter scale `180°→90°` · `minConfidence 0.5` · `formConfidence 0.8` ·
+**PushUpTracker** — counts on **chest height above the planted hand, in
+torso lengths** (~1.0 at the top, ~0.25 chest-to-floor), not on the elbow ·
+`lockoutHeight 0.85` (seed; arms the state machine) · `maxHipDeviation 15` ·
+`minimumRange 0.35` · `standardDepthFraction 0.80` of the bar (the drawn
+line) · `depthTolerance 0.12`, applied only when the standard is out of
+reach · `topGateFraction 0.25` · meter scale `1.05→0.20` · `minConfidence 0.5` · `formConfidence 0.8` ·
 `maxBodyLineDepth 0.6` · `framesToFlag 12` · range decay `0.05`/frame
 
 **SquatTracker** — `standAngle 168` `bottomAngle 95` (seeds only) ·
