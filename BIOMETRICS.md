@@ -142,7 +142,7 @@ version of the exploit. Revisit if bar-height inference ever lands.
 | **Gate** | `PlancheGeometry`: locked elbows, **the lean** (shoulders out past the hands — if they stay over the wrists it isn't a planche), body roughly level, and the **feet above the hands**, which is what separates it from a pseudo planche push-up. |
 | **Scored** | **Level first** (hips riding high is the universal cheat; the gymnastics standard treats 45° off level as failed), **straight second**, and straightness only where the legs are extended — a tuck is folded on purpose. Worst of the two. |
 | **Quiet about** | **Scapular protraction** — a real judging criterion, genuinely not measurable (see §1). Posterior pelvic tilt, for the same reason. |
-| **Review** | **Line overlay against a level reference**, not end-to-end: straight-but-tilted is precisely the fault an end-to-end line can't show. Angle overlay at the shoulder. |
+| **Review** | **Line overlay against a level reference**, not end-to-end: straight-but-tilted is precisely the fault an end-to-end line can't show. Angle overlay at the shoulder, drawn white — see §6 for why it has no bands. Charts: **OFF LEVEL** then **OFF STRAIGHT**, the same two the tracker scores. |
 
 **A planche's shoulder wants to be closed at ~60°, not open at 180°.** That
 angle *is* the lean. Scoring it against straight — copied from the handstand —
@@ -207,7 +207,7 @@ The rule the code follows (`ReviewOverlayMode.available`, `judgesItsLine`):
 |---|---|---|---|---|---|
 | **Depth-gated rep** (push-up, dip, pull-up, squat, planche push-up) | ✓ | ✗ — the line is a form note here, not the point | ✓ both sides | ✓ | Driving angle, banded against the range that set showed |
 | **Line hold** (handstand, planche, levers, plank) | ✓ | ✓ against gravity — plumb or level | ✓ where one joint decides it | ✗ | The two line angles, banded against absolute geometry |
-| **Shaped hold** (L-sit, V-sit) | ✓ | ✗ — no straight line to hold | ✓ hip | ✗ | Hip angle against a 90° ideal *(not yet built)* |
+| **Shaped hold** (L-sit, V-sit) | ✓ | ✗ — no straight line to hold | ✓ hip | ✗ | Hip *deviation* from a 90° ideal — the band machinery exists, the tracker doesn't |
 | **Transition** (muscle-up) | ✓ | ✗ | ✓ | ✗ | Phase durations *(not yet built)* |
 
 **Line is offered where holding a line is the point**, not merely where one
@@ -217,13 +217,25 @@ can be drawn. That distinction is why a push-up no longer offers it.
 
 ## 6. Open questions
 
-- **Planche and lever charts.** `AngleTimelineBuilder.holdTimelines` still
-  guards on `movement == .handstand`, so a planche session gets no charts at
-  all. It needs planche bands — level and straightness — which are different
-  zones from the handstand's, for the reason in §3.
-- **Ideal angles that aren't 180°.** L-sit, V-sit and the planche's shoulder
-  all want a scoring function parameterised by the target angle. Three
-  movements now want it; that's enough to build it.
-- **Per-side everything.** Asymmetric movements need it, and the depth meter
-  would want two bars. Worth deciding before the first asymmetric tracker,
-  not during.
+- **Per-side everything.** Asymmetric movements — one-arm push-up, one-arm
+  pull-up, pistol, archer — need per-side reps and per-side records, and the
+  depth meter would want two bars. Deliberately **not built yet**: there is
+  no asymmetric tracker to design it against, and an API with no caller gets
+  the shape wrong. The trigger is the first such tracker; do it as the first
+  commit of that work, not speculatively before it.
+- **Lever charts.** Front and back levers can reuse `plancheTimelines`
+  wholesale — same level-first-straight-second judging, different gate. They
+  arrive with the trackers.
+- **Planche shoulder bands.** `focusZones` is still nil for the planche, so
+  its shoulder arc draws white. That's deliberate: the "correct" shoulder
+  angle depends on how far you have to lean, which depends on whether you're
+  tucked, straddled or full. There is no one band that's right across the
+  variations, and inventing one would be Law 3 in a new costume.
+
+### Settled since
+
+- ~~Planche charts~~ — built. `plancheTimelines`, level first, straight
+  second, matching what the tracker scores live.
+- ~~Ideal angles that aren't 180°~~ — solved by plotting the **deviation**
+  rather than the raw angle (`deviationZones`), which moves the ideal to zero
+  wherever it sits. L-sit and V-sit inherit it for free.

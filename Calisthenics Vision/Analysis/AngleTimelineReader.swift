@@ -32,7 +32,11 @@ enum AngleTimelineBuilder {
     private static func holdTimelines(
         _ session: WorkoutSession, _ reader: TelemetryReader
     ) -> [AngleTimeline] {
-        guard session.movement == .handstand else { return [] }
+        // Which measurements a hold is judged on is per-movement — a planche
+        // is judged level first, a handstand against a plumb line. Anything
+        // without its own answer here gets no charts rather than the
+        // handstand's, which would be measuring the wrong thing confidently.
+        guard session.movement == .handstand || session.movement == .planche else { return [] }
 
         // The longest attempt, not the whole recording: the walk-in, the
         // kick-up and the fall aren't the hold, and averaged into it they
@@ -47,11 +51,57 @@ enum AngleTimelineBuilder {
             ? "Longest hold · \(SessionResult.preciseDurationLabel(longest.duration))"
             : nil
 
+        if session.movement == .planche {
+            return AngleBands.plancheTimelines(
+                level: series(reader, window: window) { pose in
+                    guard let reading = PlancheGeometry.read(pose), reading.isMeasurable
+                    else { return nil }
+                    return reading.levelDeviation
+                },
+                straight: series(reader, window: window) { pose in
+                    // Straightness only where the legs were extended, exactly
+                    // as the live score does it (`PlancheGeometry.Reading`).
+                    guard let reading = PlancheGeometry.read(pose), reading.isMeasurable,
+                          let straightness = reading.straightness
+                    else { return nil }
+                    return abs(180 - straightness)
+                },
+                subtitle: subtitle
+            )
+        }
+
         return AngleBands.handstandTimelines(
             shoulder: angles(reader, joint: (.leftShoulder, .leftWrist, .leftHip), window: window),
             hip: angles(reader, joint: (.leftHip, .leftShoulder, .leftAnkle), window: window),
             subtitle: subtitle
         )
+    }
+
+    /// Reads one measurement off every frame in the window.
+    ///
+    /// The sibling of `angles`, for measurements that aren't a joint triple —
+    /// a planche's level is the torso against gravity, which no three joints
+    /// describe. Frames the measurement can't speak to are dropped rather
+    /// than filled in (POSE.md Law 8), so a gap in the chart means a gap in
+    /// what was knowable.
+    private static func series(
+        _ reader: TelemetryReader,
+        window: ClosedRange<Int>?,
+        _ measure: (Pose) -> Double?
+    ) -> [(Int, Double)] {
+        var points: [(Int, Double)] = []
+        points.reserveCapacity(reader.frameCount)
+
+        for i in 0..<reader.frameCount {
+            if let window {
+                guard let t = reader.timestampMs(at: i), window.contains(Int(t)) else { continue }
+            }
+            guard let frame = reader.frame(at: i) else { continue }
+            let pose = Pose(points: [], confidence: [], worldPoints: frame.worldPoints)
+            guard let value = measure(pose) else { continue }
+            points.append((Int(frame.timestampMs), value))
+        }
+        return points
     }
 
     private static func repTimelines(

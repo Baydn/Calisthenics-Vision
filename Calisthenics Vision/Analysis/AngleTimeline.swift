@@ -229,6 +229,42 @@ enum AngleBands {
         AngleZone(name: "Piked", lower: 0, upper: 150, tone: .poor),
     ]
 
+    /// Bands for a measurement where **zero is perfect** — degrees away from
+    /// whatever the movement is aiming at.
+    ///
+    /// Every zone set above assumes 180° is the target, because every
+    /// movement scored until now wanted a straight line. That assumption
+    /// doesn't generalise: a planche's shoulder wants to be closed at ~60°
+    /// (that angle *is* the lean), an L-sit's hip wants 90°, and grading
+    /// either against straight scores a textbook rep at zero.
+    ///
+    /// Plotting the *deviation* rather than the raw angle sidesteps the whole
+    /// problem. The ideal becomes 0 wherever it happens to sit in degrees,
+    /// the bands are one-sided, and a chart of "how far off were you" reads
+    /// more directly than one you have to mentally subtract from anyway.
+    static func deviationZones(
+        good: Double, fair: Double, names: (good: String, fair: String, poor: String)
+    ) -> [AngleZone] {
+        [
+            AngleZone(name: names.good, lower: 0, upper: good, tone: .good),
+            AngleZone(name: names.fair, lower: good, upper: fair, tone: .fair),
+            AngleZone(name: names.poor, lower: fair, upper: 180, tone: .poor),
+        ]
+    }
+
+    /// A planche is judged level first and straight second, so its charts are
+    /// the two deviations `PlancheTracker` scores live — same numbers, same
+    /// order, so the charts and the LINE percentage can't disagree.
+    static let plancheLevelZones = deviationZones(
+        good: 10, fair: 25, names: ("Level", "Tilted", "Off")
+    )
+
+    /// 45° off level is where the gymnastics standard stops calling it a
+    /// planche at all, which is why the poor band starts well before it.
+    static let plancheStraightZones = deviationZones(
+        good: 12, fair: 30, names: ("Straight", "Soft", "Piked")
+    )
+
     /// Bands for the angle a movement is judged at, where that angle is
     /// graded against geometry rather than against your own range.
     ///
@@ -279,6 +315,62 @@ enum AngleBands {
         }
 
         return result
+    }
+
+    /// The two things a planche is judged on, over one hold.
+    ///
+    /// Level comes first because hips riding high is the universal cheat and
+    /// the one an end-to-end reference can't show. Straightness is second and
+    /// only appears where the legs were extended — a tuck is folded on
+    /// purpose, and grading it against a straight body would report a correct
+    /// tuck as a failure.
+    static func plancheTimelines(
+        level: [(Int, Double)], straight: [(Int, Double)], subtitle: String?
+    ) -> [AngleTimeline] {
+        var result: [AngleTimeline] = []
+
+        if let timeline = make(
+            title: "OFF LEVEL",
+            subtitle: subtitle,
+            explanation: """
+            How far your body sat off parallel to the ground, in degrees. \
+            Zero is level, which is the whole skill. Hips riding high is the \
+            way almost every planche cheats, and it's invisible against a \
+            line drawn end to end because a tilted body is still a straight \
+            one — this is the measurement that catches it.
+            """,
+            points: level,
+            zones: plancheLevelZones,
+            displayRange: deviationRange(for: level, ceiling: 45)
+        ) {
+            result.append(timeline)
+        }
+
+        if let timeline = make(
+            title: "OFF STRAIGHT",
+            subtitle: subtitle,
+            explanation: """
+            How far shoulder-to-hip-to-ankle bent away from a straight line. \
+            Only measured while your legs were extended: a tuck planche is \
+            folded deliberately, so scoring it against a straight body would \
+            call a correct tuck a fault.
+            """,
+            points: straight,
+            zones: plancheStraightZones,
+            displayRange: deviationRange(for: straight, ceiling: 45)
+        ) {
+            result.append(timeline)
+        }
+
+        return result
+    }
+
+    /// Display range for a deviation series: always anchored at zero, since
+    /// that's the target, and grown to fit anything worse than the ceiling.
+    static func deviationRange(
+        for points: [(Int, Double)], ceiling: Double
+    ) -> ClosedRange<Double> {
+        0...max(ceiling, (points.map(\.1).max() ?? 0) + 4)
     }
 
     static func displayRange(
