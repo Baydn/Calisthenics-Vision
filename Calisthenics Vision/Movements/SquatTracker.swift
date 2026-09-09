@@ -85,12 +85,24 @@ struct SquatTracker: MovementTracker {
         return observedMin + range * bottomGateFraction
     }
 
-    /// Where `repProgress` reaches once the knee crosses `bottomThreshold` —
-    /// the complement of `bottomGateFraction`, since `repProgress` runs from
-    /// standing (0) while the gate is a fraction from the bottom.
-    var depthGateProgress: Double? {
-        guard isCalibrated else { return nil }
-        return 1 - bottomGateFraction
+    /// Ends of the meter's scale: standing at the top, a deep squat at the
+    /// bottom. Drawing bounds, not gates (see `DepthGauge`).
+    var extendedAngle: Double = 180
+    var floorAngle: Double = 70
+
+    var depthGauge: DepthGauge? {
+        guard isInPosition, let knee = lastKneeAngle else { return nil }
+        return DepthGauge(
+            depth: onScale(knee),
+            countsAt: onScale(bottomThreshold),
+            isCalibrated: isCalibrated
+        )
+    }
+
+    private func onScale(_ angle: Double) -> Double {
+        let span = extendedAngle - floorAngle
+        guard span > 0 else { return 0 }
+        return min(1, max(0, (extendedAngle - angle) / span))
     }
 
     var diagnostics: TrackerDiagnostics {

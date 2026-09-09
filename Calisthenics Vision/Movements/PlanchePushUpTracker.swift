@@ -87,10 +87,23 @@ struct PlanchePushUpTracker: MovementTracker {
         return observedMin + range * bottomGateFraction
     }
 
-    /// Where `repProgress` reaches once the elbow crosses `bottomThreshold`.
-    var depthGateProgress: Double? {
-        guard isCalibrated else { return nil }
-        return 1 - bottomGateFraction
+    /// Ends of the meter's scale. Drawing bounds, not gates (see `DepthGauge`).
+    var extendedAngle: Double = 180
+    var floorAngle: Double = 80
+
+    var depthGauge: DepthGauge? {
+        guard isInPosition, let elbow = lastElbowAngle else { return nil }
+        return DepthGauge(
+            depth: onScale(elbow),
+            countsAt: onScale(bottomThreshold),
+            isCalibrated: isCalibrated
+        )
+    }
+
+    private func onScale(_ angle: Double) -> Double {
+        let span = extendedAngle - floorAngle
+        guard span > 0 else { return 0 }
+        return min(1, max(0, (extendedAngle - angle) / span))
     }
 
     var diagnostics: TrackerDiagnostics {

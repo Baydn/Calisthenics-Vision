@@ -167,19 +167,23 @@ struct TrainIdleView: View {
                 .padding(.bottom, Theme.Metric.tabBarClearance + 8)
             }
 
-            // Coaching and tuning live together on the trailing edge, above
-            // centre — trailing-aligned so the timer can widen when it opens
-            // without shoving tune sideways. The depth meter sits just inside
-            // them, in the same vertical band, since it's read at the same
-            // moment as the rest of the live coaching.
-            HStack(alignment: .center, spacing: 16) {
-                Spacer()
-                if showDepthMeter { depthMeterView }
-                VStack(alignment: .trailing, spacing: 12) {
+            // The depth meter owns the trailing edge. It's the thing you're
+            // actually reading mid-rep, so it gets the side your eye is
+            // already on, at a size you can catch upside down and out of
+            // breath — coaching and tuning move to the leading edge to give
+            // it the room. Leading-aligned so the countdown selector widens
+            // into the screen rather than off it.
+            HStack(alignment: .center, spacing: 0) {
+                VStack(alignment: .leading, spacing: 12) {
                     timerButton
                     tuneButton
                 }
-                .padding(.trailing, 18)
+                .padding(.leading, 18)
+                Spacer(minLength: 0)
+                if showDepthMeter {
+                    depthMeterView(height: 300)
+                        .padding(.trailing, 16)
+                }
             }
             .frame(maxHeight: .infinity, alignment: .center)
             .padding(.bottom, 80)
@@ -218,12 +222,16 @@ struct TrainIdleView: View {
                 Spacer(minLength: 0)
             }
 
-            // Same fold-in as portrait: flip lives with the rest of the
-            // trailing-edge controls instead of pinned near the tab bar. The
-            // depth meter sits just inside them, same as in portrait.
-            HStack(alignment: .center, spacing: 16) {
-                Spacer()
-                if showDepthMeter { depthMeterView }
+            // Landscape keeps the shutter on the trailing edge, where a
+            // camera app puts it and where your thumb already is, so the
+            // meter takes the leading edge instead — opposite the controls
+            // either way, and shorter because there's less height to spend.
+            HStack(alignment: .center, spacing: 0) {
+                if showDepthMeter {
+                    depthMeterView(height: 190)
+                        .padding(.leading, 16)
+                }
+                Spacer(minLength: 0)
                 VStack(alignment: .trailing, spacing: 12) {
                     flipCameraButton
                     timerButton
@@ -714,8 +722,8 @@ struct TrainIdleView: View {
         phase == .recording && selected.tunesRepDepth && tracker != nil
     }
 
-    private var depthMeterView: some View {
-        DepthMeterView(progress: progress.repProgress, gateProgress: tracker?.depthGateProgress)
+    private func depthMeterView(height: CGFloat) -> some View {
+        DepthMeterView(gauge: tracker?.depthGauge, height: height)
     }
 
     private var isHolding: Bool { progress.currentHold > 0 }

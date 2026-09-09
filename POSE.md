@@ -226,6 +226,15 @@ The pattern, from `PushUpTracker`:
 Nominal angles (`lockoutAngle = 160`, `bottomAngle = 90`) survive only as
 pre-calibration seeds.
 
+### What Law 3 does not govern: drawing scales
+
+A fixed angle used as a *threshold* is the bug. A fixed angle used as an
+**axis** is the fix. The depth meter (`DepthGauge`) draws its bar from a
+straight arm down to chest-on-floor, always the same angles, and puts its
+line at the calibrated `bottomThreshold`. Drawn the other way round — the bar
+scaled to the person's own observed range — the units moved every frame and
+the gauge became unreadable. Same rule as the angle chart's `displayRange`.
+
 ---
 
 ## 7. Counting vs. scoring
@@ -422,7 +431,7 @@ For a segmented hold additionally: several attempts recorded separately, rest
 between them uncounted, a brief dropout not splitting one hold, a sub-second
 blip discarded along with its time, and finishing mid-hold keeping it.
 
-Current coverage: **38 push-up, 46 handstand, 24 pull-up, 21 squat, 25 dip, 86 planche and planche push-up, 17 body-plausibility checks (257 total)**, all passing.
+Current coverage: **38 push-up, 46 handstand, 24 pull-up, 21 squat, 25 dip, 103 planche, planche push-up and depth-meter scale, 17 body-plausibility checks (274 total)**, all passing.
 
 A fixture that shares a bug with the code proves nothing — the aspect-ratio
 distortion bug passed 14 tests because the fixtures were generated in the
@@ -458,6 +467,7 @@ Every rule above, and the bug that earned it.
 | Skeleton flashing onto furniture and empty rooms | Any non-empty landmark array was accepted — no geometry check, no confidence check, no persistence requirement | §3b |
 | A set of short holds reported as one long hold | Personal records read the session total rather than the best attempt | §8 |
 | A push-up lockout timed as a planche | The gate assumed a push-up's hip rides down at hand level. It doesn't — only the hands and toes are on the floor, so the body is a diagonal and the hip sits *midway*, which passed the test. The harness fixture was built from the same wrong picture, so 38 checks agreed with it | §12 |
+| The depth meter swung end to end on a fidget, and changed meaning mid-set | The bar was drawn against the person's own observed range, which drifts every frame on purpose. A gauge needs fixed units; only the *line* on it should be personal | Law 3 (what it does and doesn't govern) |
 | A textbook planche scored 0% line quality | The handstand's scoring was copied along with its state machine. A handstand's arm is in line with its torso at 180°; a planche's is meant to sit at ~60°, because that angle *is* the lean holding it up | §11 |
 
 ---

@@ -95,12 +95,27 @@ struct PullUpTracker: MovementTracker {
         return observedMin + range * topGateFraction
     }
 
-    /// Where `repProgress` reaches once the elbow crosses `topThreshold` — the
-    /// complement of `topGateFraction`, since `repProgress` runs from the hang
-    /// (0) while the gate is a fraction from the top of the pull.
-    var depthGateProgress: Double? {
-        guard isCalibrated else { return nil }
-        return 1 - topGateFraction
+    /// Ends of the meter's scale: a dead hang at one end, chin over the bar
+    /// at the other. Drawing bounds, not gates (see `DepthGauge`).
+    var extendedAngle: Double = 180
+    var pulledAngle: Double = 45
+
+    /// Drawn rising rather than falling: a pull-up's "deep" is its top, and a
+    /// bar that filled downward while the body went up would read backwards.
+    var depthGauge: DepthGauge? {
+        guard isOnBar, let elbow = lastElbowAngle else { return nil }
+        return DepthGauge(
+            depth: onScale(elbow),
+            countsAt: onScale(topThreshold),
+            isCalibrated: isCalibrated,
+            risesOnScreen: true
+        )
+    }
+
+    private func onScale(_ angle: Double) -> Double {
+        let span = extendedAngle - pulledAngle
+        guard span > 0 else { return 0 }
+        return min(1, max(0, (extendedAngle - angle) / span))
     }
 
     var diagnostics: TrackerDiagnostics {

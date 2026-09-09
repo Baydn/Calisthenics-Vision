@@ -3,73 +3,94 @@
 //  Calisthenics Vision
 //
 //  Live depth readout for the movements the state machine gates on depth
-//  (push-ups, dips, pull-ups, squats — Movement.tunesRepDepth). The bar fills
-//  the way the body actually moves: empty at full extension, full at maximum
-//  depth, growing downward as you go down. The tick marks the one number this
-//  whole thing exists to answer — how far you actually have to go for the rep
-//  to count — read straight off the tracker's own gate rather than guessed at
-//  separately, so it can never disagree with what gets counted.
+//  (Movement.tunesRepDepth). The bar runs from full extension at the top to
+//  the floor at the bottom and fills downward as you descend, so it moves the
+//  way your body does. The line across it is the depth the rep starts
+//  counting at, read straight off the tracker's own gate.
 //
-//  Deliberately not animated: this tracks live pose data at capture frame
-//  rate, and easing it would make the gauge lag behind the body it's meant to
-//  be read against in real time.
+//  What the scale means, and why it's fixed rather than personal, is in
+//  `DepthGauge` — the short version is that a bar whose ends move with your
+//  own range changes meaning mid-set and can't be read.
+//
+//  Two deliberate silences. The meter dims to an empty track when the tracker
+//  isn't judging you, rather than holding the last value it saw — a frozen
+//  gauge reads as a live one, which is the same lie the skeleton's faded
+//  state exists to avoid. And the line is dashed until calibration settles,
+//  because until then it's the seed rather than your own gate.
+//
+//  Not animated: this tracks pose data at capture frame rate, and easing it
+//  would put the bar behind the body it's meant to be read against.
 //
 
 import SwiftUI
 
 struct DepthMeterView: View {
-    /// 0 at full extension (lockout / standing / hang), 1 at maximum depth.
-    var progress: Double
-    /// Fraction of `progress` at or beyond which the rep in progress will
-    /// count. Nil while the tracker hasn't calibrated enough to know yet.
-    var gateProgress: Double?
+    /// What the tracker is reading, or nil when it isn't judging you.
+    var gauge: DepthGauge?
+    var height: CGFloat = 280
 
-    private let width: CGFloat = 10
-    private let height: CGFloat = 190
+    private let width: CGFloat = 18
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
             Text("DEPTH")
                 .font(.system(size: 10, weight: .bold))
                 .tracking(Theme.Metric.labelTracking)
                 .foregroundStyle(Theme.Color.secondaryText)
                 .shadow(color: .black.opacity(0.6), radius: 4)
 
-            ZStack(alignment: .top) {
+            ZStack(alignment: gauge?.risesOnScreen == true ? .bottom : .top) {
                 Rectangle()
-                    .fill(.black.opacity(0.35))
+                    .fill(.black.opacity(0.4))
 
-                Rectangle()
-                    .fill(hasReachedGate ? Theme.Color.valid : Theme.Color.primaryText.opacity(0.9))
-                    .frame(height: height * clamped)
-
-                if let gateProgress {
+                if let gauge {
                     Rectangle()
-                        .fill(Theme.Color.primaryText.opacity(0.85))
-                        .frame(height: 2)
-                        .offset(y: height * gateProgress)
+                        .fill(gauge.hasReachedGate
+                              ? Theme.Color.valid
+                              : Theme.Color.primaryText.opacity(0.92))
+                        .frame(height: height * min(1, max(0, gauge.depth)))
                 }
             }
             .frame(width: width, height: height)
+            .overlay(alignment: .top) { gateLine }
             .clipShape(Capsule())
-            .overlay(Capsule().strokeBorder(Theme.Color.primaryText.opacity(0.25), lineWidth: 1))
+            .overlay(Capsule().strokeBorder(Theme.Color.primaryText.opacity(0.3), lineWidth: 1))
+            .opacity(gauge == nil ? 0.45 : 1)
         }
-        .shadow(color: .black.opacity(0.4), radius: 6)
+        .shadow(color: .black.opacity(0.45), radius: 6)
     }
 
-    private var clamped: Double { min(1, max(0, progress)) }
-
-    private var hasReachedGate: Bool {
-        guard let gateProgress else { return false }
-        return clamped >= gateProgress
+    /// Where the rep starts counting. Drawn white over a dark halo, the same
+    /// way the skeleton is, so it stays legible against both the filled and
+    /// the empty half of the bar.
+    @ViewBuilder
+    private var gateLine: some View {
+        if let gauge {
+            let fromTop = gauge.risesOnScreen ? 1 - gauge.countsAt : gauge.countsAt
+            ZStack {
+                Rectangle()
+                    .fill(.black.opacity(0.55))
+                    .frame(height: 5)
+                Rectangle()
+                    .fill(Theme.Color.primaryText)
+                    .frame(height: gauge.isCalibrated ? 2.5 : 1.5)
+                    .opacity(gauge.isCalibrated ? 1 : 0.7)
+            }
+            .frame(width: width)
+            .offset(y: height * min(1, max(0, fromTop)) - 2.5)
+        }
     }
 }
 
 #Preview {
-    HStack(spacing: 40) {
-        DepthMeterView(progress: 0.15, gateProgress: 0.58)
-        DepthMeterView(progress: 0.7, gateProgress: 0.58)
-        DepthMeterView(progress: 0.3, gateProgress: nil)
+    HStack(spacing: 44) {
+        DepthMeterView(gauge: DepthGauge(depth: 0.2, countsAt: 0.62, isCalibrated: true))
+        DepthMeterView(gauge: DepthGauge(depth: 0.8, countsAt: 0.62, isCalibrated: true))
+        DepthMeterView(gauge: DepthGauge(depth: 0.35, countsAt: 0.62, isCalibrated: false))
+        DepthMeterView(
+            gauge: DepthGauge(depth: 0.7, countsAt: 0.58, isCalibrated: true, risesOnScreen: true)
+        )
+        DepthMeterView(gauge: nil)
     }
     .padding(40)
     .background(Theme.Color.background)

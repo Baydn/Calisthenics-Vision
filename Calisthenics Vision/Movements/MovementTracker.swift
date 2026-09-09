@@ -57,6 +57,36 @@ enum IdealLine: Equatable {
     case endToEnd
 }
 
+/// What the live depth meter draws: where you are between full extension and
+/// the bottom of the movement, and where along that the rep starts counting.
+///
+/// **The scale is fixed and the line is personal, and that split is the whole
+/// design.** The first version drew both against the person's own observed
+/// range, which drifts every frame — so a fidget before the first rep swung
+/// the bar end to end, and mid-set the top and bottom kept changing meaning
+/// underneath the line. A gauge whose units move is unreadable.
+///
+/// So the *bar* is drawn against fixed angles: a straight arm at the top,
+/// chest-to-floor at the bottom. That isn't POSE.md Law 3 creeping back in —
+/// Law 3 governs what counts, and what counts is still `bottomThreshold`, a
+/// fraction into your own range. That threshold is exactly where the line is
+/// drawn, so someone with a short range sees the line sit lower to meet them
+/// while the bar keeps saying what depth actually is.
+struct DepthGauge: Equatable {
+    /// 0 at full extension, 1 at the deep end of the scale.
+    var depth: Double
+    /// Where on the same scale the rep begins to count.
+    var countsAt: Double
+    /// False while the gate is still the seed rather than the person's own
+    /// range, so the line can be drawn as provisional rather than as fact.
+    var isCalibrated: Bool
+    /// Whether depth runs *up* the screen. A pull-up's deep end is its top,
+    /// and a meter that filled downward as the body rose would read backwards.
+    var risesOnScreen = false
+
+    var hasReachedGate: Bool { depth >= countsAt }
+}
+
 enum FormIssue: String, Equatable {
     case hipSag = "Keep your hips in line"
     case shallowRep = "Go lower"
@@ -124,13 +154,9 @@ protocol MovementTracker {
     var progress: MovementProgress { get }
     var diagnostics: TrackerDiagnostics { get }
 
-    /// Where `progress.repProgress` needs to reach for the rep under way to
-    /// count, once enough motion has been seen to know it — nil before
-    /// calibration, and nil for anything with no depth gate at all (a timed
-    /// hold has no "how far down" to show). Surfaced so the HUD's depth meter
-    /// can mark the same line the state machine actually counts at, rather
-    /// than a second guess at it.
-    var depthGateProgress: Double? { get }
+    /// What the HUD's depth meter draws, or nil where there's nothing honest
+    /// to draw — a timed hold, or a body that isn't in position.
+    var depthGauge: DepthGauge? { get }
 
     /// Feed one smoothed pose. Returns any event that just occurred.
     mutating func update(pose: Pose?, timestampMs: Int) -> MovementEvent?
@@ -144,7 +170,7 @@ protocol MovementTracker {
 extension MovementTracker {
     /// Most movements have nothing to settle; only segmented holds override.
     mutating func finish() {}
-    var depthGateProgress: Double? { nil }
+    var depthGauge: DepthGauge? { nil }
 }
 
 extension Movement {
