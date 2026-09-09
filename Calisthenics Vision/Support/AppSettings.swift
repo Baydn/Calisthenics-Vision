@@ -125,18 +125,20 @@ final class AppSettings {
             }
         }
 
-        /// How close to the depth you showed us a rep has to get, in degrees.
+        /// Where the counting line sits on the depth meter, as a fraction of
+        /// the bar. Higher is deeper, and it is literally the line you see.
         ///
-        /// These used to be fractions into the observed range, and they were
-        /// **backwards**: the gate sits at `min + fraction × range`, so the
-        /// "strict" 0.58 put it *higher* up — nearer the top, shallower —
+        /// These used to be fractions into the *observed range*, and they
+        /// were **backwards**: that gate sits at `min + fraction × range`, so
+        /// the "strict" 0.58 put it *higher* up — nearer the top, shallower —
         /// than the "lenient" 0.32. Picking Strict made counting looser.
-        /// Degrees off your own bottom can't be read the wrong way round.
-        var depthTolerance: Double {
+        /// A position on the bar can't be read the wrong way round, because
+        /// you can see where it lands.
+        var depthFraction: Double {
             switch self {
-            case .lenient:  25
-            case .standard: 15
-            case .strict:   8
+            case .lenient:  0.68
+            case .standard: 0.80
+            case .strict:   0.90
             }
         }
     }

@@ -46,17 +46,19 @@ struct PushUpTracker: MovementTracker {
     /// separates consecutive reps.
     var topGateFraction: Double = 0.25
 
-    /// How close to the depth you actually showed us a rep has to get, in
-    /// degrees. This is the gate the meter draws its line at.
+    /// Where the counting line sits, as a fraction of the meter's bar. This
+    /// is a *standard*: it's known before you've moved, so the line is on
+    /// screen from the first frame of the recording and doesn't have to be
+    /// discovered.
+    var standardDepthFraction: Double = 0.80
+
+    /// How close to your own measured bottom counts, in degrees.
     ///
-    /// Anchored to your own measured bottom rather than to a fraction of the
-    /// range, because the range's two ends are not equally trustworthy. The
-    /// top end is fragile — the plank you set up in reads straighter than any
-    /// rep you'll actually do — and a gate hanging off it drifts shallow,
-    /// which is what put the line halfway up the bar. Your bottom is the
-    /// honest end: it only exists because you went there. "Get back within
-    /// 15° of it" means the same thing whatever your range is, and it puts
-    /// the line down where the work is.
+    /// This can only ever make the gate **more forgiving** than the standard,
+    /// never stricter — see `bottomThreshold`. That asymmetry is the whole
+    /// point: it's what stops someone whose elbow reads 120° at their deepest
+    /// from counting zero reps forever (POSE.md Law 3), without letting the
+    /// target the rest of us are aiming at wander around.
     var depthTolerance: Double = 15
 
     /// Landmarks below this confidence are ignored — an occluded arm reports
@@ -181,13 +183,21 @@ struct PushUpTracker: MovementTracker {
         return observedMax - range * topGateFraction
     }
 
+    /// The angle the standard sits at, from the fraction of the bar it's
+    /// drawn at.
+    var standardDepthAngle: Double {
+        extendedAngle - standardDepthFraction * (extendedAngle - floorAngle)
+    }
+
     /// Angle at or below which the rep counts as deep enough.
+    ///
+    /// The standard, or your own bottom plus a tolerance — whichever is
+    /// **easier to reach**. Calibration only ever forgives here. Someone
+    /// whose deepest rep reads 120° gets a gate that meets them; everyone
+    /// else is judged against the line they can see, which is what makes the
+    /// line worth looking at.
     var bottomThreshold: Double {
-        if let settledMin { return settledMin + depthTolerance }
-        guard isCalibrated, let observedMin, let range = observedRange else {
-            return bottomAngle
-        }
-        return observedMin + range * bottomGateFraction
+        max(standardDepthAngle, (settledMin ?? -.infinity) + depthTolerance)
     }
 
     /// Ends of the scale the depth meter is drawn on: a straight arm at the
@@ -199,14 +209,20 @@ struct PushUpTracker: MovementTracker {
     var extendedAngle: Double = 180
     var floorAngle: Double = 90
 
-    /// The line is drawn only once a rep has settled the range. Drawing it
-    /// off the running observation meant it slid down the bar through the
-    /// first descent and shifted again after every rep.
+    /// Always present. Only the fill depends on being able to see you; the
+    /// bar and its line are there from the first frame of the recording, and
+    /// stay put while you walk in and out of shot.
+    ///
+    /// The line is drawn at the **standard**, not at `bottomThreshold`, and
+    /// those differ only when calibration has loosened the gate for a short
+    /// range. Drawing the loosened one moved the line — by a couple of
+    /// percent, but it moved, and a target that shifts is the thing being
+    /// fixed here. Since the gate is never *stricter* than the standard, the
+    /// promise the line makes is still kept: reach it and the rep counts.
     var depthGauge: DepthGauge? {
-        guard isInPosition, let elbow = lastElbowAngle else { return nil }
-        return DepthGauge(
-            depth: onScale(elbow),
-            countsAt: isSettled ? onScale(bottomThreshold) : nil
+        DepthGauge(
+            depth: (isInPosition ? lastElbowAngle : nil).map(onScale),
+            countsAt: onScale(standardDepthAngle)
         )
     }
 

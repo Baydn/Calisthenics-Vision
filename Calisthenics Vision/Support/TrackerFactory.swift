@@ -21,37 +21,36 @@ enum TrackerFactory {
 
         // Depth is the one gate someone might reasonably want tighter than
         // the default, and it means the same thing in each of these: how
-        // close to the depth you actually showed us a rep has to get, in
-        // degrees off your own bottom. The default stays generous, because an
-        // uncounted rep reads as a broken app (Law 4).
-        let depth = settings.repDepth.depthTolerance
+        // where the counting line sits on the depth meter. It is the line
+        // the person can see, so the setting moves a thing they can point at.
+        let depth = settings.repDepth.depthFraction
 
         switch movement {
         case .pushUps:
             var tracker = PushUpTracker()
-            tracker.depthTolerance = depth
+            tracker.standardDepthFraction = depth
             return tracker
 
         case .squat:
             var tracker = SquatTracker()
-            tracker.depthTolerance = depth
+            tracker.standardDepthFraction = depth
             return tracker
 
         case .dip:
             var tracker = DipTracker()
-            tracker.depthTolerance = depth
+            tracker.standardDepthFraction = depth
             return tracker
 
         case .planchePushUp:
             var tracker = PlanchePushUpTracker()
-            tracker.depthTolerance = depth
+            tracker.standardDepthFraction = depth
             return tracker
 
         case .pullUps:
             var tracker = PullUpTracker()
             // Measured from the top of the pull on a pull-up, but the same
-            // idea: how close to what you showed us a rep has to get.
-            tracker.depthTolerance = depth
+            // idea: where the line sits on the bar.
+            tracker.standardDepthFraction = depth
             return tracker
 
         default:

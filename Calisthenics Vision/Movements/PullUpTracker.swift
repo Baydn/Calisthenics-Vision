@@ -41,11 +41,14 @@ struct PullUpTracker: MovementTracker {
     /// what separates consecutive reps.
     var hangGateFraction: Double = 0.25
 
-    /// How close to the top of the pull you actually showed us a rep has to
-    /// get, in degrees — the gate the meter draws its line at. Anchored to
-    /// your own measured top rather than to a fraction of the range, whose
-    /// hang end is the fragile one (hanging about between reps reads
-    /// straighter than any pull). See `PushUpTracker.depthTolerance`.
+    /// Where the counting line sits, as a fraction of the meter's bar — a
+    /// *standard*, known before you've moved, so the line is on screen from
+    /// the first frame of the recording. See `PushUpTracker`.
+    var standardDepthFraction: Double = 0.80
+
+    /// How close to your own measured bottom counts, in degrees. Can only
+    /// ever make the gate more forgiving than the standard, never stricter,
+    /// which is what stops a short range counting nothing (Law 3).
     var depthTolerance: Double = 15
 
     var minConfidence: Float = 0.5
@@ -123,11 +126,7 @@ struct PullUpTracker: MovementTracker {
 
     /// At or below this the pull counts as high enough.
     var topThreshold: Double {
-        if let settledMin { return settledMin + depthTolerance }
-        guard isCalibrated, let observedMin, let range = observedRange else {
-            return topAngle
-        }
-        return observedMin + range * topGateFraction
+        max(standardDepthAngle, (settledMin ?? -.infinity) + depthTolerance)
     }
 
     /// Ends of the meter's scale: a dead hang at one end, chin over the bar
@@ -138,12 +137,17 @@ struct PullUpTracker: MovementTracker {
     /// Drawn rising rather than falling: a pull-up's "deep" is its top, and a
     /// bar that filled downward while the body went up would read backwards.
     var depthGauge: DepthGauge? {
-        guard isOnBar, let elbow = lastElbowAngle else { return nil }
-        return DepthGauge(
-            depth: onScale(elbow),
-            countsAt: isSettled ? onScale(topThreshold) : nil,
+        DepthGauge(
+            depth: (isOnBar ? lastElbowAngle : nil).map(onScale),
+            countsAt: onScale(standardDepthAngle),
             risesOnScreen: true
         )
+    }
+
+    /// The angle the standard sits at, from the fraction of the bar it's
+    /// drawn at.
+    var standardDepthAngle: Double {
+        extendedAngle - standardDepthFraction * (extendedAngle - pulledAngle)
     }
 
     private func onScale(_ angle: Double) -> Double {

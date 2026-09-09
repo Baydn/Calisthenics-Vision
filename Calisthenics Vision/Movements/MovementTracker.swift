@@ -73,22 +73,26 @@ enum IdealLine: Equatable {
 /// drawn, so someone with a short range sees the line sit lower to meet them
 /// while the bar keeps saying what depth actually is.
 struct DepthGauge: Equatable {
-    /// 0 at full extension, 1 at the deep end of the scale.
-    var depth: Double
-    /// Where on the same scale the rep begins to count — nil until the
-    /// person's own range is known.
+    /// Where you are on the bar — 0 at full extension, 1 at the deep end —
+    /// or nil when the tracker can't currently see you.
     ///
-    /// Drawing the pre-calibration seed here was a mistake: a push-up's seed
-    /// bottom of 90° lands 90% down a bar scaled 180°→80°, far deeper than
-    /// anyone's real gate, so the line sat at the floor and then leapt up the
-    /// moment the first rep landed. No line is better than a wrong one, and
-    /// the bar itself is readable from the first frame regardless.
-    var countsAt: Double?
+    /// Only the *fill* goes away when you step out of frame. The bar and its
+    /// line stay, because they're a target, and a target that vanishes when
+    /// you walk out of shot was never a target.
+    var depth: Double?
+    /// Where on the same scale the rep begins to count. **Always known.**
+    ///
+    /// It's a standard, not a discovery: drawn from the first frame of the
+    /// recording, before any pose, and it doesn't wait for a rep to teach it.
+    /// Earlier versions withheld it until calibration settled, which meant it
+    /// arrived partway through the set and looked like it had appeared from
+    /// nowhere.
+    var countsAt: Double
     /// Whether depth runs *up* the screen. A pull-up's deep end is its top,
     /// and a meter that filled downward as the body rose would read backwards.
     var risesOnScreen = false
 
-    var hasReachedGate: Bool { countsAt.map { depth >= $0 } ?? false }
+    var hasReachedGate: Bool { (depth ?? 0) >= countsAt }
 }
 
 enum FormIssue: String, Equatable {

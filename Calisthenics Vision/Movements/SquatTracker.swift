@@ -40,10 +40,14 @@ struct SquatTracker: MovementTracker {
     /// separates consecutive reps.
     var topGateFraction: Double = 0.25
 
-    /// How close to the depth you actually showed us a rep has to get, in
-    /// degrees — the gate the meter draws its line at. Anchored to your own
-    /// measured bottom rather than to a fraction of the range, whose top end
-    /// is the fragile one. See `PushUpTracker.depthTolerance`.
+    /// Where the counting line sits, as a fraction of the meter's bar — a
+    /// *standard*, known before you've moved, so the line is on screen from
+    /// the first frame of the recording. See `PushUpTracker`.
+    var standardDepthFraction: Double = 0.80
+
+    /// How close to your own measured bottom counts, in degrees. Can only
+    /// ever make the gate more forgiving than the standard, never stricter,
+    /// which is what stops a short range counting nothing (Law 3).
     var depthTolerance: Double = 15
 
     var minConfidence: Float = 0.5
@@ -114,9 +118,7 @@ struct SquatTracker: MovementTracker {
     }
 
     var bottomThreshold: Double {
-        if let settledMin { return settledMin + depthTolerance }
-        guard isCalibrated, let observedMin, let range = observedRange else { return bottomAngle }
-        return observedMin + range * bottomGateFraction
+        max(standardDepthAngle, (settledMin ?? -.infinity) + depthTolerance)
     }
 
     /// Ends of the meter's scale: standing at the top, a deep squat at the
@@ -125,11 +127,16 @@ struct SquatTracker: MovementTracker {
     var floorAngle: Double = 70
 
     var depthGauge: DepthGauge? {
-        guard isInPosition, let knee = lastKneeAngle else { return nil }
-        return DepthGauge(
-            depth: onScale(knee),
-            countsAt: isSettled ? onScale(bottomThreshold) : nil
+        DepthGauge(
+            depth: (isInPosition ? lastKneeAngle : nil).map(onScale),
+            countsAt: onScale(standardDepthAngle)
         )
+    }
+
+    /// The angle the standard sits at, from the fraction of the bar it's
+    /// drawn at.
+    var standardDepthAngle: Double {
+        extendedAngle - standardDepthFraction * (extendedAngle - floorAngle)
     }
 
     private func onScale(_ angle: Double) -> Double {
