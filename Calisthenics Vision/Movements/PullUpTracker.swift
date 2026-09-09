@@ -154,6 +154,16 @@ struct PullUpTracker: MovementTracker {
         extendedAngle - standardDepthFraction * (extendedAngle - pulledAngle)
     }
 
+    /// See `MovementTracker.depthGauge(for:)` — the replay's meter.
+    func depthGauge(for pose: Pose) -> DepthGauge? {
+        guard Self.isHanging(pose), let elbow = elbowAngle(pose) else { return nil }
+        return DepthGauge(
+            depth: onScale(elbow),
+            countsAt: onScale(standardDepthAngle),
+            risesOnScreen: true
+        )
+    }
+
     private func onScale(_ angle: Double) -> Double {
         let span = extendedAngle - pulledAngle
         guard span > 0 else { return 0 }

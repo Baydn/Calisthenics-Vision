@@ -29,10 +29,17 @@ enum ReviewOverlayMode: String, CaseIterable, Identifiable, Codable {
     }
 
     /// The modes worth offering for a movement — a mode with nothing to draw
-    /// would be a control that does nothing.
+    /// would be a control that does nothing, and a mode with nothing *useful*
+    /// to say is barely better.
+    ///
+    /// Line is offered only where holding a line is the point of the movement
+    /// (`judgesItsLine`), not merely where one can be drawn. A push-up has a
+    /// body line and sagging it is a real fault — the tracker still calls it
+    /// out — but nobody reviews a push-up to study their plank, and offering
+    /// the mode there implied all four views mattered equally.
     static func available(for movement: Movement) -> [ReviewOverlayMode] {
         var modes: [ReviewOverlayMode] = [.skeleton]
-        if movement.alignmentChain != nil { modes.append(.line) }
+        if movement.judgesItsLine, movement.alignmentChain != nil { modes.append(.line) }
         if movement.focusAngle != nil { modes.append(.angle) }
         modes.append(.off)
         return modes

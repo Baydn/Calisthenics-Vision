@@ -6,6 +6,9 @@ by inventing its own approach.
 
 Read this before touching anything in `Pose/` or `Movements/`. Product
 context is in [SPEC.md](SPEC.md); current build state is in `CLAUDE.md`.
+**Per-movement measurements live in [BIOMETRICS.md](BIOMETRICS.md)** — what
+each movement is counted on, scored on, and deliberately quiet about. This
+file is the rules; that one applies them movement by movement.
 
 The rules exist because each one is a bug we already shipped. The failures
 are catalogued at the bottom — if you're about to break a rule, read its

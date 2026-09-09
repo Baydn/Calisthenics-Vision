@@ -132,6 +132,12 @@ struct DipTracker: MovementTracker {
         extendedAngle - standardDepthFraction * (extendedAngle - floorAngle)
     }
 
+    /// See `MovementTracker.depthGauge(for:)` — the replay's meter.
+    func depthGauge(for pose: Pose) -> DepthGauge? {
+        guard Self.isSupported(pose), let elbow = elbowAngle(pose) else { return nil }
+        return DepthGauge(depth: onScale(elbow), countsAt: onScale(standardDepthAngle))
+    }
+
     private func onScale(_ angle: Double) -> Double {
         let span = extendedAngle - floorAngle
         guard span > 0 else { return 0 }

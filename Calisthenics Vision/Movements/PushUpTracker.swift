@@ -262,6 +262,12 @@ struct PushUpTracker: MovementTracker {
         )
     }
 
+    /// See `MovementTracker.depthGauge(for:)` — the replay's meter.
+    func depthGauge(for pose: Pose) -> DepthGauge? {
+        guard pose.isTorsoHorizontal ?? false, let height = chestHeight(pose) else { return nil }
+        return DepthGauge(depth: onScale(height), countsAt: onScale(standardDepthHeight))
+    }
+
     private func onScale(_ height: Double) -> Double {
         let span = extendedHeight - floorHeight
         guard span > 0 else { return 0 }

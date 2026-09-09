@@ -177,15 +177,55 @@ struct PoseAnnotationView: View {
         _ project: (CGPoint) -> CGPoint
     ) {
         guard let focus = movement.focusAngle,
-              let joints = visibleSide(pose, [focus.vertex, focus.from, focus.to]),
-              let rawVertex = pose.point(joints[0]),
+              let near = visibleSide(pose, [focus.vertex, focus.from, focus.to])
+        else { return }
+
+        // **Both sides, not one.** On a bilateral movement the difference
+        // between them is itself the thing worth looking at — one elbow
+        // flaring, or giving out before the other, is invisible if only the
+        // near arm is ever drawn (Baydon, 2026-09-09). The far side is drawn
+        // lighter: it projects inside the body, so at equal weight it fights
+        // the near one for attention rather than adding to it.
+        let far = near.map(\.mirrored)
+        let nearReading = drawArc(pose, near, emphasised: true, &context, project)
+        let farReading = drawArc(pose, far, emphasised: false, &context, project)
+
+        guard let nearReading else { return }
+
+        // One label carrying both numbers. Filmed side-on the two arcs land
+        // almost on top of each other, and two labels there would overlap
+        // into nonsense.
+        let text: String
+        if let farReading, abs(farReading.degrees - nearReading.degrees) >= 1 {
+            let nearIsLeft = near[0] == focus.vertex
+            let left = nearIsLeft ? nearReading.degrees : farReading.degrees
+            let right = nearIsLeft ? farReading.degrees : nearReading.degrees
+            text = "\(focus.label) L \(Int(left.rounded()))° · R \(Int(right.rounded()))°"
+        } else {
+            text = "\(focus.label) \(Int(nearReading.degrees.rounded()))°"
+        }
+        label(text, at: nearReading.anchor, tint: tint(pose), in: &context)
+    }
+
+    /// Draws one side's limbs and arc, and reports where its label would go
+    /// and what it measured. Nil when that side isn't in the frame.
+    private func drawArc(
+        _ pose: Pose,
+        _ joints: [PoseJoint],
+        emphasised: Bool,
+        _ context: inout GraphicsContext,
+        _ project: (CGPoint) -> CGPoint
+    ) -> (anchor: CGPoint, degrees: Double)? {
+        guard let rawVertex = pose.point(joints[0]),
               let rawFrom = pose.point(joints[1]),
               let rawTo = pose.point(joints[2])
-        else { return }
+        else { return nil }
 
         let vertex = project(rawVertex)
         let from = project(rawFrom)
         let to = project(rawTo)
+        let weight: CGFloat = emphasised ? 1 : 0.55
+        let fade: Double = emphasised ? 1 : 0.5
 
         // The two limbs that make the angle, drawn heavy so the rest of the
         // body reads as context.
@@ -195,21 +235,21 @@ struct PoseAnnotationView: View {
         limbs.addLine(to: to)
         context.stroke(
             limbs,
-            with: .color(.black.opacity(0.5)),
-            style: StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round)
+            with: .color(.black.opacity(0.5 * fade)),
+            style: StrokeStyle(lineWidth: 8 * weight, lineCap: .round, lineJoin: .round)
         )
         context.stroke(
             limbs,
-            with: .color(tint(pose)),
-            style: StrokeStyle(lineWidth: 4.5, lineCap: .round, lineJoin: .round)
+            with: .color(tint(pose).opacity(fade)),
+            style: StrokeStyle(lineWidth: 4.5 * weight, lineCap: .round, lineJoin: .round)
         )
 
         for point in [from, to] {
-            context.fill(dot(point, 6.5), with: .color(.black.opacity(0.5)))
-            context.fill(dot(point, 5), with: .color(Theme.Color.primaryText))
+            context.fill(dot(point, 6.5 * weight), with: .color(.black.opacity(0.5 * fade)))
+            context.fill(dot(point, 5 * weight), with: .color(Theme.Color.primaryText.opacity(fade)))
         }
-        context.fill(dot(vertex, 7.5), with: .color(.black.opacity(0.5)))
-        context.fill(dot(vertex, 6), with: .color(Theme.Color.primaryText))
+        context.fill(dot(vertex, 7.5 * weight), with: .color(.black.opacity(0.5 * fade)))
+        context.fill(dot(vertex, 6 * weight), with: .color(Theme.Color.primaryText.opacity(fade)))
 
         // The arc, swept between the two limbs. Built by sampling rather than
         // with addArc so there's no ambiguity about which way round it goes —
@@ -232,17 +272,27 @@ struct PoseAnnotationView: View {
             )
             step == 0 ? arc.move(to: point) : arc.addLine(to: point)
         }
-        context.stroke(arc, with: .color(.black.opacity(0.45)), style: StrokeStyle(lineWidth: 5))
-        context.stroke(arc, with: .color(tint(pose)), style: StrokeStyle(lineWidth: 2.5))
+        context.stroke(
+            arc,
+            with: .color(.black.opacity(0.45 * fade)),
+            style: StrokeStyle(lineWidth: 5 * weight)
+        )
+        context.stroke(
+            arc,
+            with: .color(tint(pose).opacity(fade)),
+            style: StrokeStyle(lineWidth: 2.5 * weight)
+        )
 
         // The measurement is the 3D one, even though the arc is a projection.
-        guard let degrees = pose.angle(at: joints[0], from: joints[1], to: joints[2]) else { return }
+        guard let degrees = pose.angle(at: joints[0], from: joints[1], to: joints[2]) else {
+            return nil
+        }
         let midAngle = startAngle + sweep / 2
         let anchor = CGPoint(
             x: vertex.x + cos(midAngle) * (radius + 26),
             y: vertex.y + sin(midAngle) * (radius + 26)
         )
-        label("\(focus.label) \(Int(degrees.rounded()))°", at: anchor, tint: tint(pose), in: &context)
+        return (anchor, degrees)
     }
 
     /// Green / amber / red where the movement has bands worth grading against,

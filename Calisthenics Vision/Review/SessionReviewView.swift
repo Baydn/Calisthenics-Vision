@@ -49,6 +49,22 @@ struct SessionReviewView: View {
     @State private var showsControls = true
     @State private var controlHideTask: Task<Void, Never>?
 
+    /// The depth meter for the frame on screen, for movements that gate on
+    /// depth. Built through `TrackerFactory` so the line sits where the
+    /// person's own depth setting puts it, exactly as it did live.
+    private var reviewDepthGauge: DepthGauge? {
+        guard session.movement.tunesRepDepth,
+              let tracker = TrackerFactory.make(for: session.movement)
+        else { return nil }
+        guard let pose = poseAtCurrentTime else {
+            // No frame yet: still draw the bar and its line, the same way the
+            // live meter does before it has seen anyone.
+            return tracker.depthGauge(for: Pose(points: [], confidence: [], worldPoints: []))
+                ?? DepthGauge(depth: nil, countsAt: 0.80)
+        }
+        return tracker.depthGauge(for: pose) ?? DepthGauge(depth: nil, countsAt: 0.80)
+    }
+
     /// Pose logged at the current playback position, if telemetry exists.
     private var poseAtCurrentTime: Pose? {
         guard let reader else { return nil }
@@ -277,6 +293,18 @@ struct SessionReviewView: View {
                     sourceAspect: videoAspect,
                     contentMode: .fit
                 )
+            }
+
+            // The same depth meter the set was performed against, replayed.
+            // Watching a rep back without it means judging depth by eye,
+            // which is the thing the meter exists to replace — and the line
+            // is a standard, so it needs no calibration to be drawn here.
+            if let gauge = reviewDepthGauge {
+                HStack {
+                    Spacer()
+                    DepthMeterView(gauge: gauge, height: 190)
+                        .padding(.trailing, 12)
+                }
             }
 
             if player == nil {

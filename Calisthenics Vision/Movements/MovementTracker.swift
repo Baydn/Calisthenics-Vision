@@ -166,6 +166,15 @@ protocol MovementTracker {
     /// to draw — a timed hold, or a body that isn't in position.
     var depthGauge: DepthGauge? { get }
 
+    /// The same gauge for a single *recorded* frame, with no set behind it.
+    ///
+    /// Review replays telemetry with no tracker running: nothing calibrated,
+    /// no rep has settled a range. That's exactly the state the standard was
+    /// designed for — it's known before anyone moves — so the line review
+    /// draws is the same line the live meter drew, and a rep that looked
+    /// short on the day still looks short on the replay.
+    func depthGauge(for pose: Pose) -> DepthGauge?
+
     /// Feed one smoothed pose. Returns any event that just occurred.
     mutating func update(pose: Pose?, timestampMs: Int) -> MovementEvent?
     mutating func reset()
@@ -179,6 +188,7 @@ extension MovementTracker {
     /// Most movements have nothing to settle; only segmented holds override.
     mutating func finish() {}
     var depthGauge: DepthGauge? { nil }
+    func depthGauge(for pose: Pose) -> DepthGauge? { nil }
 }
 
 extension Movement {
@@ -205,12 +215,34 @@ extension Movement {
 
     var isTrackingSupported: Bool { makeTracker() != nil }
 
+    /// Whether holding a straight line is *the point* of this movement, as
+    /// opposed to a form note taken while something else is being counted.
+    ///
+    /// This is what decides whether review offers the Line overlay. A planche
+    /// or a lever is judged on its line and nothing else; a push-up has a
+    /// line, and sagging it is a real fault the tracker still calls out, but
+    /// nobody reviews a push-up to look at their plank. Offering the mode
+    /// everywhere made the picker look like it had four settings that all
+    /// mattered equally, when for most movements one of them is beside the
+    /// point (Baydon, 2026-09-09).
+    var judgesItsLine: Bool {
+        switch self {
+        case .planche, .frontLever, .backLever, .elbowLever, .humanFlag,
+             .handstand, .handstandPushUp, .plank, .sidePlank, .hollowBody,
+             .deadHang, .dragonFlag:
+            true
+        default:
+            false
+        }
+    }
+
     /// The joint this movement is judged at, for the angle overlay: the
     /// vertex and the two joints whose lines form it.
     ///
     /// Deliberately the same angle the tracker counts on and the same one the
     /// chart plots — three views of one measurement. Left-side joints; the
-    /// overlay mirrors them to whichever side the camera can see.
+    /// overlay draws both sides where both are visible, since on a bilateral
+    /// movement the difference between them is itself worth seeing.
     var focusAngle: (vertex: PoseJoint, from: PoseJoint, to: PoseJoint, label: String)? {
         switch self {
         // A handstand's shoulder wants to be open at 180°; a planche's wants
