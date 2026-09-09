@@ -74,6 +74,14 @@ struct DipTracker: MovementTracker {
         return observedMin + range * bottomGateFraction
     }
 
+    /// Where `repProgress` reaches once the elbow crosses `bottomThreshold` —
+    /// the complement of `bottomGateFraction`, since `repProgress` runs from
+    /// the top of the range while the gate is a fraction from the bottom.
+    var depthGateProgress: Double? {
+        guard isCalibrated else { return nil }
+        return 1 - bottomGateFraction
+    }
+
     var diagnostics: TrackerDiagnostics {
         var d = TrackerDiagnostics()
         d.isReady = isOnBars

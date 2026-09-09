@@ -169,9 +169,12 @@ struct TrainIdleView: View {
 
             // Coaching and tuning live together on the trailing edge, above
             // centre — trailing-aligned so the timer can widen when it opens
-            // without shoving tune sideways.
-            HStack {
+            // without shoving tune sideways. The depth meter sits just inside
+            // them, in the same vertical band, since it's read at the same
+            // moment as the rest of the live coaching.
+            HStack(alignment: .center, spacing: 16) {
                 Spacer()
+                if showDepthMeter { depthMeterView }
                 VStack(alignment: .trailing, spacing: 12) {
                     timerButton
                     tuneButton
@@ -216,9 +219,11 @@ struct TrainIdleView: View {
             }
 
             // Same fold-in as portrait: flip lives with the rest of the
-            // trailing-edge controls instead of pinned near the tab bar.
-            HStack {
+            // trailing-edge controls instead of pinned near the tab bar. The
+            // depth meter sits just inside them, same as in portrait.
+            HStack(alignment: .center, spacing: 16) {
                 Spacer()
+                if showDepthMeter { depthMeterView }
                 VStack(alignment: .trailing, spacing: 12) {
                     flipCameraButton
                     timerButton
@@ -700,6 +705,17 @@ struct TrainIdleView: View {
                     .shadow(color: .black.opacity(0.5), radius: 6)
             }
         }
+    }
+
+    /// Only movements the state machine actually gates on depth get a depth
+    /// readout — a timed hold has no "how far down" to show, and there's no
+    /// point drawing a bar before a tracker exists to drive it.
+    private var showDepthMeter: Bool {
+        phase == .recording && selected.tunesRepDepth && tracker != nil
+    }
+
+    private var depthMeterView: some View {
+        DepthMeterView(progress: progress.repProgress, gateProgress: tracker?.depthGateProgress)
     }
 
     private var isHolding: Bool { progress.currentHold > 0 }

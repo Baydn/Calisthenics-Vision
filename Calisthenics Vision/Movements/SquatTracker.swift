@@ -85,6 +85,14 @@ struct SquatTracker: MovementTracker {
         return observedMin + range * bottomGateFraction
     }
 
+    /// Where `repProgress` reaches once the knee crosses `bottomThreshold` —
+    /// the complement of `bottomGateFraction`, since `repProgress` runs from
+    /// standing (0) while the gate is a fraction from the bottom.
+    var depthGateProgress: Double? {
+        guard isCalibrated else { return nil }
+        return 1 - bottomGateFraction
+    }
+
     var diagnostics: TrackerDiagnostics {
         var d = TrackerDiagnostics()
         d.isReady = isInPosition

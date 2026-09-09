@@ -95,6 +95,14 @@ struct PullUpTracker: MovementTracker {
         return observedMin + range * topGateFraction
     }
 
+    /// Where `repProgress` reaches once the elbow crosses `topThreshold` — the
+    /// complement of `topGateFraction`, since `repProgress` runs from the hang
+    /// (0) while the gate is a fraction from the top of the pull.
+    var depthGateProgress: Double? {
+        guard isCalibrated else { return nil }
+        return 1 - topGateFraction
+    }
+
     var diagnostics: TrackerDiagnostics {
         var d = TrackerDiagnostics()
         d.isReady = isOnBar

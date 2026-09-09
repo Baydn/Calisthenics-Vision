@@ -133,6 +133,14 @@ struct PushUpTracker: MovementTracker {
         return observedMin + range * bottomGateFraction
     }
 
+    /// Where `repProgress` reaches once the elbow crosses `bottomThreshold`.
+    /// `repProgress` runs from the top of the range (0) while the gate is a
+    /// fraction from the bottom, so it's the complement of `bottomGateFraction`.
+    var depthGateProgress: Double? {
+        guard isCalibrated else { return nil }
+        return 1 - bottomGateFraction
+    }
+
     mutating func update(pose: Pose?, timestampMs: Int) -> MovementEvent? {
         guard let pose else {
             isInPosition = false

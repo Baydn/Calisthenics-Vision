@@ -106,6 +106,14 @@ protocol MovementTracker {
     var progress: MovementProgress { get }
     var diagnostics: TrackerDiagnostics { get }
 
+    /// Where `progress.repProgress` needs to reach for the rep under way to
+    /// count, once enough motion has been seen to know it — nil before
+    /// calibration, and nil for anything with no depth gate at all (a timed
+    /// hold has no "how far down" to show). Surfaced so the HUD's depth meter
+    /// can mark the same line the state machine actually counts at, rather
+    /// than a second guess at it.
+    var depthGateProgress: Double? { get }
+
     /// Feed one smoothed pose. Returns any event that just occurred.
     mutating func update(pose: Pose?, timestampMs: Int) -> MovementEvent?
     mutating func reset()
@@ -118,6 +126,7 @@ protocol MovementTracker {
 extension MovementTracker {
     /// Most movements have nothing to settle; only segmented holds override.
     mutating func finish() {}
+    var depthGateProgress: Double? { nil }
 }
 
 extension Movement {
@@ -136,6 +145,7 @@ extension Movement {
         case .squat:     SquatTracker()
         case .dip:       DipTracker()
         case .handstand: HandstandTracker()
+        case .planche:   PlancheTracker()
         default:         nil
         }
     }
@@ -150,7 +160,7 @@ extension Movement {
     /// overlay mirrors them to whichever side the camera can see.
     var focusAngle: (vertex: PoseJoint, from: PoseJoint, to: PoseJoint, label: String)? {
         switch self {
-        case .handstand:
+        case .handstand, .planche:
             (.leftShoulder, .leftWrist, .leftHip, "Shoulder")
         case .pushUps, .dip, .pullUps:
             (.leftElbow, .leftShoulder, .leftWrist, "Elbow")
@@ -228,6 +238,7 @@ extension Movement {
         case .squat:     SquatTracker.isStandingUpright(pose)
         case .dip:       DipTracker.isSupported(pose)
         case .handstand: HandstandTracker.isInverted(pose)
+        case .planche:   PlancheTracker.isSupported(pose)
         default:         nil
         }
     }

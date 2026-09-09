@@ -340,10 +340,9 @@ hip is folded at 0°" and produces a confident wrong warning. Diagnostics show
 `—` for nil; they never show a fabricated number.
 
 Same principle at the movement level: `Movement.makeTracker()` returns `nil`
-for pull-ups, muscle-ups, L-sits and planche, and the HUD says the movement
-isn't tracked yet. It does **not** substitute a push-up counter that would
-appear to work while counting nothing. Keep that pattern when adding
-movements.
+for muscle-ups and L-sits, and the HUD says the movement isn't tracked yet. It
+does **not** substitute a push-up counter that would appear to work while
+counting nothing. Keep that pattern when adding movements.
 
 ---
 
@@ -413,7 +412,7 @@ For a segmented hold additionally: several attempts recorded separately, rest
 between them uncounted, a brief dropout not splitting one hold, a sub-second
 blip discarded along with its time, and finishing mid-hold keeping it.
 
-Current coverage: **38 push-up, 46 handstand, 24 pull-up, 21 squat, 25 dip, 17 body-plausibility checks (171 total)**, all passing.
+Current coverage: **38 push-up, 46 handstand, 24 pull-up, 21 squat, 25 dip, 38 planche, 17 body-plausibility checks (209 total)**, all passing.
 
 A fixture that shares a bug with the code proves nothing — the aspect-ratio
 distortion bug passed 14 tests because the fixtures were generated in the
@@ -482,3 +481,13 @@ never a gate) · `minConfidence 0.5` · `framesToFlag 20` · `maxFrameGapMs 500`
 · `holdGapToleranceMs 400` · `minimumHoldSeconds 1.0` ·
 `HoldSegment.kickUpSuccessSeconds 2.0` · quality taper `90°` → 0
 · inversion separation `0.3 m`
+
+**PlancheTracker** — same hold-segmentation constants as HandstandTracker
+(`idealAlignment 180` · `warnDeviation 45` · `minConfidence 0.5` ·
+`framesToFlag 20` · `maxFrameGapMs 500` · `holdGapToleranceMs 400` ·
+`minimumHoldSeconds 1.0`) · orientation gate: elbow `> 140°` (locked, rules
+out an elbow lever) · body-line verticality `< 0.5` (horizontal, rules out a
+handstand or dip) · hip must sit closer to shoulder height than to wrist
+height, with the wrist-to-hip gap `> 0.2 ×` body length first (rules out a
+push-up lockout, where the reverse is true, and lying flat, where neither gap
+exists) — see `PlancheTracker.isSupported` for the physical reasoning
