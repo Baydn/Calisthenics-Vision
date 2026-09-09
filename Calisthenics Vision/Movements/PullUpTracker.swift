@@ -41,6 +41,13 @@ struct PullUpTracker: MovementTracker {
     /// what separates consecutive reps.
     var hangGateFraction: Double = 0.25
 
+    /// How close to the top of the pull you actually showed us a rep has to
+    /// get, in degrees — the gate the meter draws its line at. Anchored to
+    /// your own measured top rather than to a fraction of the range, whose
+    /// hang end is the fragile one (hanging about between reps reads
+    /// straighter than any pull). See `PushUpTracker.depthTolerance`.
+    var depthTolerance: Double = 15
+
     var minConfidence: Float = 0.5
     /// Form judgements need firmer evidence than counting does.
     var formConfidence: Float = 0.8
@@ -116,9 +123,7 @@ struct PullUpTracker: MovementTracker {
 
     /// At or below this the pull counts as high enough.
     var topThreshold: Double {
-        if let settledMin, let range = settledRange {
-            return settledMin + range * topGateFraction
-        }
+        if let settledMin { return settledMin + depthTolerance }
         guard isCalibrated, let observedMin, let range = observedRange else {
             return topAngle
         }
@@ -197,6 +202,7 @@ struct PullUpTracker: MovementTracker {
         observeRange(elbow)
         repMin = min(elbow, repMin ?? elbow)
         repMax = max(elbow, repMax ?? elbow)
+        settleDepth(reaching: elbow)
         progress.repProgress = normalizedHeight(elbow)
 
         if let event = checkForm(pose) { return event }
@@ -240,7 +246,11 @@ struct PullUpTracker: MovementTracker {
 
         switch phase {
         case .awaitingHang:
-            if isCalibrated, elbow >= hang { enterHang(at: elbow) }
+            // Arming can't wait for calibration: the observed range only
+            // grows once you move. See `PushUpTracker.advance`.
+            if elbow >= hangAngle || (isCalibrated && elbow >= hang) {
+                enterHang(at: elbow)
+            }
 
         case .hanging:
             // Require a clear departure, so jitter sitting on the gate can't
@@ -254,7 +264,6 @@ struct PullUpTracker: MovementTracker {
                 // to hear the number.
                 phase = .top
                 progress.reps += 1
-                settleRange(closingAt: elbow)
                 return .repCompleted(total: progress.reps)
             } else if elbow >= hang {
                 // Sank back without pulling high enough — not a rep.
@@ -264,22 +273,32 @@ struct PullUpTracker: MovementTracker {
         case .top:
             // Must come back down before another can count, so bobbing at
             // the top doesn't rack up reps.
-            if elbow >= hang { enterHang(at: elbow) }
+            if elbow >= hang {
+                settleTop(elbow)
+                enterHang(at: elbow)
+            }
         }
         return nil
     }
 
-    /// Takes the range from the rep that just finished, then holds it, so the
-    /// gates and the meter's line stop moving under you. See
-    /// `PushUpTracker.settleRange` for the bug this fixes.
-    private mutating func settleRange(closingAt elbow: Double) {
-        let low = min(repMin ?? elbow, elbow)
-        let high = max(repMax ?? elbow, elbow)
-        let travel = high - low
-        guard travel >= minimumRange else { return }
-        if let settled = settledRange, travel <= settled * 1.25 { return }
+    /// Sets the target at the top of the first pull, the moment the elbow
+    /// turns around and starts back down. See `PushUpTracker.settleDepth`.
+    private mutating func settleDepth(reaching elbow: Double) {
+        guard settledMin == nil,
+              let low = repMin, let high = repMax,
+              high - low >= minimumRange,
+              elbow > low + 2
+        else { return }
 
         settledMin = low
+        settledMax = high
+    }
+
+    /// The hang the last rep actually returned to. Keeps adapting, unlike the
+    /// target, because nothing draws it. See `PushUpTracker.settleTop`.
+    private mutating func settleTop(_ elbow: Double) {
+        let high = max(repMax ?? elbow, elbow)
+        guard let low = settledMin, high - low >= minimumRange else { return }
         settledMax = high
     }
 

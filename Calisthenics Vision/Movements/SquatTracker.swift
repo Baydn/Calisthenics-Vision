@@ -40,6 +40,12 @@ struct SquatTracker: MovementTracker {
     /// separates consecutive reps.
     var topGateFraction: Double = 0.25
 
+    /// How close to the depth you actually showed us a rep has to get, in
+    /// degrees — the gate the meter draws its line at. Anchored to your own
+    /// measured bottom rather than to a fraction of the range, whose top end
+    /// is the fragile one. See `PushUpTracker.depthTolerance`.
+    var depthTolerance: Double = 15
+
     var minConfidence: Float = 0.5
     /// Form judgements need firmer evidence than counting does.
     var formConfidence: Float = 0.8
@@ -108,9 +114,7 @@ struct SquatTracker: MovementTracker {
     }
 
     var bottomThreshold: Double {
-        if let settledMin, let range = settledRange {
-            return settledMin + range * bottomGateFraction
-        }
+        if let settledMin { return settledMin + depthTolerance }
         guard isCalibrated, let observedMin, let range = observedRange else { return bottomAngle }
         return observedMin + range * bottomGateFraction
     }
@@ -184,6 +188,7 @@ struct SquatTracker: MovementTracker {
         observeRange(knee)
         repMin = min(knee, repMin ?? knee)
         repMax = max(knee, repMax ?? knee)
+        settleDepth(reaching: knee)
         progress.repProgress = normalizedDepth(knee)
 
         if let event = checkForm(pose) { return event }
@@ -227,7 +232,12 @@ struct SquatTracker: MovementTracker {
 
         switch phase {
         case .awaitingStand:
-            if isCalibrated, knee >= top { enterStand(at: knee) }
+            // Arming can't wait for calibration: the observed range only
+            // grows once you move, so it would arm halfway down your first
+            // rep and eat it. See `PushUpTracker.advance`.
+            if knee >= standAngle || (isCalibrated && knee >= top) {
+                enterStand(at: knee)
+            }
 
         case .standing:
             if knee < top - dwellMargin { phase = .descending }
@@ -243,7 +253,7 @@ struct SquatTracker: MovementTracker {
         case .bottom:
             if knee >= top {
                 progress.reps += 1
-                settleRange(closingAt: knee)
+                settleTop(knee)
                 enterStand(at: knee)
                 return .repCompleted(total: progress.reps)
             }
@@ -252,18 +262,26 @@ struct SquatTracker: MovementTracker {
     }
 
 
-    /// Takes the range from the rep that just finished, then holds it, so the
-    /// gates and the meter's line stop moving under you. A later rep replaces
-    /// it only if it travelled a good deal further, which recovers from a
-    /// half-hearted first rep. See `PushUpTracker.settleRange`.
-    private mutating func settleRange(closingAt angle: Double) {
-        let low = min(repMin ?? angle, angle)
-        let high = max(repMax ?? angle, angle)
-        let travel = high - low
-        guard travel >= minimumRange else { return }
-        if let settled = settledRange, travel <= settled * 1.25 { return }
+    /// Sets the depth target at the bottom of the first descent, the moment
+    /// the angle turns around. Waiting for the rep to finish meant the line
+    /// didn't appear until the second one. See `PushUpTracker.settleDepth`.
+    private mutating func settleDepth(reaching angle: Double) {
+        guard settledMin == nil,
+              let low = repMin, let high = repMax,
+              high - low >= minimumRange,
+              angle > low + 2
+        else { return }
 
         settledMin = low
+        settledMax = high
+    }
+
+    /// The top the last rep actually finished at. Keeps adapting, unlike the
+    /// depth target, because the first rep starts from a setup nothing
+    /// afterwards revisits — and nothing draws this, so it can move unseen.
+    private mutating func settleTop(_ angle: Double) {
+        let high = max(repMax ?? angle, angle)
+        guard let low = settledMin, high - low >= minimumRange else { return }
         settledMax = high
     }
 

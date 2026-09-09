@@ -20,37 +20,38 @@ enum TrackerFactory {
         let settings = AppSettings.shared
 
         // Depth is the one gate someone might reasonably want tighter than
-        // the default, and it means the same thing in each of these: how far
-        // into your own observed range a rep has to travel. The default stays
-        // lenient, because an uncounted rep reads as a broken app (Law 4).
-        let depth = settings.repDepth.bottomGateFraction
+        // the default, and it means the same thing in each of these: how
+        // close to the depth you actually showed us a rep has to get, in
+        // degrees off your own bottom. The default stays generous, because an
+        // uncounted rep reads as a broken app (Law 4).
+        let depth = settings.repDepth.depthTolerance
 
         switch movement {
         case .pushUps:
             var tracker = PushUpTracker()
-            tracker.bottomGateFraction = depth
+            tracker.depthTolerance = depth
             return tracker
 
         case .squat:
             var tracker = SquatTracker()
-            tracker.bottomGateFraction = depth
+            tracker.depthTolerance = depth
             return tracker
 
         case .dip:
             var tracker = DipTracker()
-            tracker.bottomGateFraction = depth
+            tracker.depthTolerance = depth
             return tracker
 
         case .planchePushUp:
             var tracker = PlanchePushUpTracker()
-            tracker.bottomGateFraction = depth
+            tracker.depthTolerance = depth
             return tracker
 
         case .pullUps:
             var tracker = PullUpTracker()
-            // Named for the top on a pull-up, but the same idea: how far into
-            // your range the rep has to travel to count.
-            tracker.topGateFraction = depth
+            // Measured from the top of the pull on a pull-up, but the same
+            // idea: how close to what you showed us a rep has to get.
+            tracker.depthTolerance = depth
             return tracker
 
         default:

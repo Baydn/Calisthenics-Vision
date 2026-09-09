@@ -219,9 +219,11 @@ The pattern, from `PushUpTracker`:
    passed — decaying through a rest ate the range at 1.5°/s, so half a minute
    holding the top of a plank un-learned the person mid-set.
 
-   **This running observation exists only to detect the first rep.** Once a
-   rep completes, the range is taken from *that rep* (`settledMin`/
-   `settledMax`) and held for the set. Every frame in position was the wrong
+   **This running observation exists only to arm the state machine.** The
+   depth target is set at the *bottom of the first descent* — the instant the
+   angle turns around, which is the earliest moment it is actually known —
+   and held for the set. Waiting for the rep to finish meant the line didn't
+   appear until the second one. Every frame in position was the wrong
    sample: setting up in a plank holds the elbows locked at ~178° while the
    top people return to between reps is nearer 160°, so the setup — not the
    reps — set the maximum. Since every gate is a fraction of the range, one
@@ -232,13 +234,24 @@ The pattern, from `PushUpTracker`:
    position — not when the descent is detected, which is already a dwell
    margin late.
 2. Refuse to count until total travel exceeds `minimumRange` (**45°**), so
-   fidgeting in position can't calibrate its way into counting.
+   fidgeting in position can't calibrate its way into counting. Arming the
+   state machine is the one thing allowed to use a seeded angle: the observed
+   range only grows once you move, so waiting for calibration to arm meant
+   the counter woke up halfway down your first rep and ate it.
 3. Place gates as *fractions into the observed range*, not absolute angles.
 
-| Gate | Fraction | Why asymmetric |
+| Gate | Value | Anchored to |
 |---|---|---|
-| Bottom (depth) | **0.42** | Loose. Depth coaching belongs in form feedback, not in withholding the count. |
-| Top (lockout) | **0.25** | Tighter. The top of a rep is unambiguous and it's what separates consecutive reps. |
+| Bottom (depth) | `depthTolerance` **15°** | Your own measured bottom. |
+| Top (lockout) | fraction **0.25** | The top the last rep finished at. |
+
+The depth gate is **degrees off your measured bottom, not a fraction of the
+range**, because the range's two ends are not equally trustworthy. The top is
+fragile — the plank you set up in reads straighter than any rep you'll do —
+and a gate hanging off it drifts shallow. The bottom only exists because you
+went there. This also can't be read backwards, which the old fractions were:
+the setting's "strict" 0.58 sat *higher* up the range than its "lenient"
+0.32, so picking Strict made counting looser.
 
 Nominal angles (`lockoutAngle = 160`, `bottomAngle = 90`) survive only as
 pre-calibration seeds.
@@ -448,7 +461,7 @@ For a segmented hold additionally: several attempts recorded separately, rest
 between them uncounted, a brief dropout not splitting one hold, a sub-second
 blip discarded along with its time, and finishing mid-hold keeping it.
 
-Current coverage: **38 push-up, 46 handstand, 24 pull-up, 21 squat, 25 dip, 128 planche, planche push-up, depth-meter scale and range calibration, 17 body-plausibility checks (299 total)**, all passing.
+Current coverage: **38 push-up, 46 handstand, 24 pull-up, 21 squat, 25 dip, 136 planche, planche push-up, depth-meter scale and rep calibration, 17 body-plausibility checks (307 total)**, all passing.
 
 A fixture that shares a bug with the code proves nothing — the aspect-ratio
 distortion bug passed 14 tests because the fixtures were generated in the
@@ -484,6 +497,8 @@ Every rule above, and the bug that earned it.
 | Skeleton flashing onto furniture and empty rooms | Any non-empty landmark array was accepted — no geometry check, no confidence check, no persistence requirement | §3b |
 | A set of short holds reported as one long hold | Personal records read the session total rather than the best attempt | §8 |
 | A push-up lockout timed as a planche | The gate assumed a push-up's hip rides down at hand level. It doesn't — only the hands and toes are on the floor, so the body is a diagonal and the hip sits *midway*, which passed the test. The harness fixture was built from the same wrong picture, so 38 checks agreed with it | §12 |
+| The depth line only appeared on the second rep, and the first rep never counted | Arming needed a calibrated range, but the range only grows once you move — so the counter armed halfway down the first descent, too late to leave a top. The seeded lockout now arms it | §6 |
+| The depth line sat halfway up the bar when it belongs near the bottom | Two causes: the gate was a fraction of a range whose top end came from the setup, and the bar's deep end (80°) was set below where anyone goes, so real travel bunched in the middle | §6 |
 | Barely had to go down for a rep to count, but had to go all the way back up before it would — and the target moved after every rep | The range was learned from every frame in position, so the plank you set up in (elbows locked, ~178°) set the maximum instead of your reps (~160°). Gates are fractions of the range, so an inflated end loosened the depth gate and tightened the lockout gate at once | §6 |
 | Gates collapsed and a small bob scored a rep after a rest; the meter's line wandered up the bar, then jumped to the bottom | Range decay ran every frame in position, including while holding still, at 1.5°/s. After ~20 s motionless the range fell under `minimumRange` and the tracker un-learned the person mid-set. Decay now needs movement, and floors at `minimumRange` | §6 |
 | The depth meter's line sat at the floor of the bar, then leapt on the first rep | The pre-calibration seed (`bottomAngle` 90°) was drawn as if it were a real gate. It lands 90% down a bar scaled 180°→80°, nowhere near anyone's actual gate. No line until the range is known | §6 |
@@ -498,9 +513,10 @@ Change these deliberately; each has a reason above.
 
 **Pose** — verticality gate `0.7` · depth-dominant `0.6` · EMA factor `0.6`
 
-**PushUpTracker** — `lockoutAngle 160` `bottomAngle 90` (seeds only) ·
-`maxHipDeviation 15` · `minimumRange 45` · `bottomGateFraction 0.42` ·
-`topGateFraction 0.25` · `minConfidence 0.5` · `formConfidence 0.8` ·
+**PushUpTracker** — `lockoutAngle 160` `bottomAngle 90` (seeds; the lockout
+also arms the state machine) · `maxHipDeviation 15` · `minimumRange 45` ·
+`depthTolerance 15°` off your own bottom · `topGateFraction 0.25` ·
+meter scale `180°→90°` · `minConfidence 0.5` · `formConfidence 0.8` ·
 `maxBodyLineDepth 0.6` · `framesToFlag 12` · range decay `0.05`/frame
 
 **SquatTracker** — `standAngle 168` `bottomAngle 95` (seeds only) ·

@@ -46,6 +46,19 @@ struct PushUpTracker: MovementTracker {
     /// separates consecutive reps.
     var topGateFraction: Double = 0.25
 
+    /// How close to the depth you actually showed us a rep has to get, in
+    /// degrees. This is the gate the meter draws its line at.
+    ///
+    /// Anchored to your own measured bottom rather than to a fraction of the
+    /// range, because the range's two ends are not equally trustworthy. The
+    /// top end is fragile — the plank you set up in reads straighter than any
+    /// rep you'll actually do — and a gate hanging off it drifts shallow,
+    /// which is what put the line halfway up the bar. Your bottom is the
+    /// honest end: it only exists because you went there. "Get back within
+    /// 15° of it" means the same thing whatever your range is, and it puts
+    /// the line down where the work is.
+    var depthTolerance: Double = 15
+
     /// Landmarks below this confidence are ignored — an occluded arm reports
     /// a position, just not a trustworthy one.
     var minConfidence: Float = 0.5
@@ -170,9 +183,7 @@ struct PushUpTracker: MovementTracker {
 
     /// Angle at or below which the rep counts as deep enough.
     var bottomThreshold: Double {
-        if let settledMin, let range = settledRange {
-            return settledMin + range * bottomGateFraction
-        }
+        if let settledMin { return settledMin + depthTolerance }
         guard isCalibrated, let observedMin, let range = observedRange else {
             return bottomAngle
         }
@@ -180,10 +191,13 @@ struct PushUpTracker: MovementTracker {
     }
 
     /// Ends of the scale the depth meter is drawn on: a straight arm at the
-    /// top, chest-to-floor at the bottom. Drawing bounds, not gates — see
+    /// top, chest-to-floor at the bottom. The deep end is a *full* rep, not
+    /// an unreachable one — set below where anyone actually goes, everyone's
+    /// travel bunches into the middle of the bar and drags the gate line up
+    /// with it. Drawing bounds, not gates — see
     /// `DepthGauge` for why those are different things.
     var extendedAngle: Double = 180
-    var floorAngle: Double = 80
+    var floorAngle: Double = 90
 
     /// The line is drawn only once a rep has settled the range. Drawing it
     /// off the running observation meant it slid down the bar through the
@@ -237,6 +251,7 @@ struct PushUpTracker: MovementTracker {
         observeRange(elbow)
         repMin = min(elbow, repMin ?? elbow)
         repMax = max(elbow, repMax ?? elbow)
+        settleDepth(reaching: elbow)
         progress.repProgress = normalizedDepth(elbow)
 
         if let event = checkForm(pose) { return event }
@@ -297,9 +312,16 @@ struct PushUpTracker: MovementTracker {
 
         switch phase {
         case .awaitingLockout:
-            // Needs calibration first, so the very first motion establishes
-            // the range rather than being judged against a guess.
-            if isCalibrated, elbow >= top { enterTop(at: elbow) }
+            // Arming needs a top to leave from, and waiting for calibration
+            // meant it could never happen while you were *still* — the
+            // observed range only grows once you move, so the counter armed
+            // halfway down your first descent and ate that rep, which is why
+            // the line waited for the second one. The seeded lockout is safe
+            // here precisely because it only *starts* the state machine:
+            // every gate that decides anything is still measured off you.
+            if elbow >= lockoutAngle || (isCalibrated && elbow >= top) {
+                enterTop(at: elbow)
+            }
 
         case .top:
             // Require a clear departure before believing a rep has started;
@@ -317,7 +339,7 @@ struct PushUpTracker: MovementTracker {
         case .bottom:
             if elbow >= top {
                 progress.reps += 1
-                settleRange(closingAt: elbow)
+                settleTop(elbow)
                 enterTop(at: elbow)
                 return .repCompleted(total: progress.reps)
             }
@@ -336,21 +358,40 @@ struct PushUpTracker: MovementTracker {
         repMax = elbow
     }
 
-    /// Takes the range from the rep that just finished.
+    /// Sets the depth target at the bottom of the first descent — the moment
+    /// the elbow turns around and starts back up.
     ///
-    /// The first real rep sets it and it then holds, so the gates and the
-    /// meter's line stop moving under you. A later rep replaces it only if it
-    /// travelled a good deal further — which recovers from a first rep that
-    /// was a half-hearted warm-up, without letting the target drift rep by
-    /// rep, which is the thing that made it unreadable.
-    private mutating func settleRange(closingAt elbow: Double) {
-        let low = min(repMin ?? elbow, elbow)
-        let high = max(repMax ?? elbow, elbow)
-        let travel = high - low
-        guard travel >= minimumRange else { return }
-        if let settled = settledRange, travel <= settled * 1.25 { return }
+    /// Waiting for the rep to *finish* meant the line didn't appear until the
+    /// second one, because the first rep is the one that teaches us the
+    /// range. The bottom is the earliest instant the number is actually
+    /// known: by then you've been to the deepest point of the rep, and
+    /// nothing about coming back up adds to it.
+    ///
+    /// It then holds for the set. Your first honest rep is the target, and a
+    /// target that moves is not one.
+    private mutating func settleDepth(reaching elbow: Double) {
+        guard settledMin == nil,
+              let low = repMin, let high = repMax,
+              high - low >= minimumRange,
+              // Turned around: on the way back up from the bottom, rather
+              // than still descending.
+              elbow > low + 2
+        else { return }
 
         settledMin = low
+        settledMax = high
+    }
+
+    /// The top the last rep actually finished at.
+    ///
+    /// Kept adapting every rep, unlike the depth target, because the first
+    /// rep starts from a setup lockout that nothing afterwards revisits —
+    /// and because nothing draws this, so it can move without anyone seeing
+    /// it. Left fixed, it demanded you push back up to your setup on every
+    /// rep before one would close.
+    private mutating func settleTop(_ elbow: Double) {
+        let high = max(repMax ?? elbow, elbow)
+        guard let low = settledMin, high - low >= minimumRange else { return }
         settledMax = high
     }
 

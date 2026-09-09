@@ -124,12 +124,19 @@ final class AppSettings {
             case .strict:   "Only counts near-full depth"
             }
         }
-        /// Fraction into the observed range the bottom gate sits at.
-        var bottomGateFraction: Double {
+
+        /// How close to the depth you showed us a rep has to get, in degrees.
+        ///
+        /// These used to be fractions into the observed range, and they were
+        /// **backwards**: the gate sits at `min + fraction × range`, so the
+        /// "strict" 0.58 put it *higher* up — nearer the top, shallower —
+        /// than the "lenient" 0.32. Picking Strict made counting looser.
+        /// Degrees off your own bottom can't be read the wrong way round.
+        var depthTolerance: Double {
             switch self {
-            case .lenient:  0.32
-            case .standard: 0.42
-            case .strict:   0.58
+            case .lenient:  25
+            case .standard: 15
+            case .strict:   8
             }
         }
     }
