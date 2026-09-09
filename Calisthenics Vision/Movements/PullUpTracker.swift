@@ -74,15 +74,40 @@ struct PullUpTracker: MovementTracker {
     /// Last angle fed to `observeRange`, to tell moving from holding still.
     private var lastRangeAngle: Double?
 
+    /// Extremes of the rep currently under way, and the range a *completed*
+    /// rep showed us — which is what the gates use once there is one.
+    ///
+    /// Learning it from every frame on the bar let hanging about set the
+    /// range: see `PushUpTracker` for the bug and why a finished rep is the
+    /// honest sample. The first one sets the range and it then holds.
+    private var repMin: Double?
+    private var repMax: Double?
+    private var settledMin: Double?
+    private var settledMax: Double?
+
     var observedRange: Double? {
         guard let observedMin, let observedMax else { return nil }
         return observedMax - observedMin
     }
 
+    var settledRange: Double? {
+        guard let settledMin, let settledMax else { return nil }
+        return settledMax - settledMin
+    }
+
+    /// True once a completed rep has defined the range.
+    var isSettled: Bool { settledRange != nil }
+
     var isCalibrated: Bool { (observedRange ?? 0) >= minimumRange }
+
+    /// The range the gates are computed from.
+    var workingRange: Double? { settledRange ?? (isCalibrated ? observedRange : nil) }
 
     /// At or above this the arms count as hung.
     var hangThreshold: Double {
+        if let settledMax, let range = settledRange {
+            return settledMax - range * hangGateFraction
+        }
         guard isCalibrated, let observedMax, let range = observedRange else {
             return hangAngle
         }
@@ -91,6 +116,9 @@ struct PullUpTracker: MovementTracker {
 
     /// At or below this the pull counts as high enough.
     var topThreshold: Double {
+        if let settledMin, let range = settledRange {
+            return settledMin + range * topGateFraction
+        }
         guard isCalibrated, let observedMin, let range = observedRange else {
             return topAngle
         }
@@ -108,7 +136,7 @@ struct PullUpTracker: MovementTracker {
         guard isOnBar, let elbow = lastElbowAngle else { return nil }
         return DepthGauge(
             depth: onScale(elbow),
-            countsAt: isCalibrated ? onScale(topThreshold) : nil,
+            countsAt: isSettled ? onScale(topThreshold) : nil,
             risesOnScreen: true
         )
     }
@@ -167,6 +195,8 @@ struct PullUpTracker: MovementTracker {
         guard onBar, let elbow = lastElbowAngle else { return nil }
 
         observeRange(elbow)
+        repMin = min(elbow, repMin ?? elbow)
+        repMax = max(elbow, repMax ?? elbow)
         progress.repProgress = normalizedHeight(elbow)
 
         if let event = checkForm(pose) { return event }
@@ -180,6 +210,10 @@ struct PullUpTracker: MovementTracker {
         observedMin = nil
         observedMax = nil
         lastRangeAngle = nil
+        repMin = nil
+        repMax = nil
+        settledMin = nil
+        settledMax = nil
     }
 
     // MARK: - Calibration
@@ -206,7 +240,7 @@ struct PullUpTracker: MovementTracker {
 
         switch phase {
         case .awaitingHang:
-            if isCalibrated, elbow >= hang { phase = .hanging }
+            if isCalibrated, elbow >= hang { enterHang(at: elbow) }
 
         case .hanging:
             // Require a clear departure, so jitter sitting on the gate can't
@@ -220,22 +254,46 @@ struct PullUpTracker: MovementTracker {
                 // to hear the number.
                 phase = .top
                 progress.reps += 1
+                settleRange(closingAt: elbow)
                 return .repCompleted(total: progress.reps)
             } else if elbow >= hang {
                 // Sank back without pulling high enough — not a rep.
-                phase = .hanging
+                enterHang(at: elbow)
             }
 
         case .top:
             // Must come back down before another can count, so bobbing at
             // the top doesn't rack up reps.
-            if elbow >= hang { phase = .hanging }
+            if elbow >= hang { enterHang(at: elbow) }
         }
         return nil
     }
 
+    /// Takes the range from the rep that just finished, then holds it, so the
+    /// gates and the meter's line stop moving under you. See
+    /// `PushUpTracker.settleRange` for the bug this fixes.
+    private mutating func settleRange(closingAt elbow: Double) {
+        let low = min(repMin ?? elbow, elbow)
+        let high = max(repMax ?? elbow, elbow)
+        let travel = high - low
+        guard travel >= minimumRange else { return }
+        if let settled = settledRange, travel <= settled * 1.25 { return }
+
+        settledMin = low
+        settledMax = high
+    }
+
+    /// Returning to the hang opens the window the next rep's range is
+    /// measured over. It starts here rather than when the pull is detected,
+    /// which only happens once the dwell margin has already been travelled.
+    private mutating func enterHang(at elbow: Double) {
+        phase = .hanging
+        repMin = elbow
+        repMax = elbow
+    }
+
     private var dwellMargin: Double {
-        guard let range = observedRange, isCalibrated else { return 10 }
+        guard let range = workingRange else { return 10 }
         return max(5, range * 0.1)
     }
 

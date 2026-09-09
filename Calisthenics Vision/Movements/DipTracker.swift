@@ -59,6 +59,28 @@ struct DipTracker: MovementTracker {
     /// Last angle fed to `observeRange`, to tell moving from holding still.
     private var lastRangeAngle: Double?
 
+    /// Extremes of the rep currently under way, and the range a *completed*
+    /// rep showed us — which is what the gates use once there is one.
+    ///
+    /// Learning it from every frame in position let the setup set the range:
+    /// see `PushUpTracker` for the bug and why a finished rep is the honest
+    /// sample. The first one sets the range and it then holds for the set.
+    private var repMin: Double?
+    private var repMax: Double?
+    private var settledMin: Double?
+    private var settledMax: Double?
+
+    var settledRange: Double? {
+        guard let settledMin, let settledMax else { return nil }
+        return settledMax - settledMin
+    }
+
+    /// True once a completed rep has defined the range.
+    var isSettled: Bool { settledRange != nil }
+
+    /// The range the gates are computed from.
+    var workingRange: Double? { settledRange ?? (isCalibrated ? observedRange : nil) }
+
     var observedRange: Double? {
         guard let observedMin, let observedMax else { return nil }
         return observedMax - observedMin
@@ -67,11 +89,17 @@ struct DipTracker: MovementTracker {
     var isCalibrated: Bool { (observedRange ?? 0) >= minimumRange }
 
     var topThreshold: Double {
+        if let settledMax, let range = settledRange {
+            return settledMax - range * topGateFraction
+        }
         guard isCalibrated, let observedMax, let range = observedRange else { return lockoutAngle }
         return observedMax - range * topGateFraction
     }
 
     var bottomThreshold: Double {
+        if let settledMin, let range = settledRange {
+            return settledMin + range * bottomGateFraction
+        }
         guard isCalibrated, let observedMin, let range = observedRange else { return bottomAngle }
         return observedMin + range * bottomGateFraction
     }
@@ -85,7 +113,7 @@ struct DipTracker: MovementTracker {
         guard isOnBars, let elbow = lastElbowAngle else { return nil }
         return DepthGauge(
             depth: onScale(elbow),
-            countsAt: isCalibrated ? onScale(bottomThreshold) : nil
+            countsAt: isSettled ? onScale(bottomThreshold) : nil
         )
     }
 
@@ -142,6 +170,8 @@ struct DipTracker: MovementTracker {
         guard supported, let elbow = lastElbowAngle else { return nil }
 
         observeRange(elbow)
+        repMin = min(elbow, repMin ?? elbow)
+        repMax = max(elbow, repMax ?? elbow)
         progress.repProgress = normalizedDepth(elbow)
 
         // Depth is watched throughout the rep and judged when it finishes.
@@ -158,6 +188,10 @@ struct DipTracker: MovementTracker {
         observedMin = nil
         observedMax = nil
         lastRangeAngle = nil
+        repMin = nil
+        repMax = nil
+        settledMin = nil
+        settledMax = nil
     }
 
     // MARK: - Calibration
@@ -184,7 +218,7 @@ struct DipTracker: MovementTracker {
 
         switch phase {
         case .awaitingLockout:
-            if isCalibrated, elbow >= top { phase = .top }
+            if isCalibrated, elbow >= top { enterTop(at: elbow) }
 
         case .top:
             if elbow < top - dwellMargin {
@@ -196,13 +230,14 @@ struct DipTracker: MovementTracker {
             if elbow <= bottom {
                 phase = .bottom
             } else if elbow >= top {
-                phase = .top
+                enterTop(at: elbow)
             }
 
         case .bottom:
             if elbow >= top {
-                phase = .top
                 progress.reps += 1
+                settleRange(closingAt: elbow)
+                enterTop(at: elbow)
 
                 // Counted first, judged second — the rep is banked either way.
                 if isFormMeasurable && !reachedDepth {
@@ -217,8 +252,33 @@ struct DipTracker: MovementTracker {
         return nil
     }
 
+
+    /// Takes the range from the rep that just finished, then holds it, so the
+    /// gates and the meter's line stop moving under you. A later rep replaces
+    /// it only if it travelled a good deal further, which recovers from a
+    /// half-hearted first rep. See `PushUpTracker.settleRange`.
+    private mutating func settleRange(closingAt angle: Double) {
+        let low = min(repMin ?? angle, angle)
+        let high = max(repMax ?? angle, angle)
+        let travel = high - low
+        guard travel >= minimumRange else { return }
+        if let settled = settledRange, travel <= settled * 1.25 { return }
+
+        settledMin = low
+        settledMax = high
+    }
+
+    /// Arriving at the top opens the window the next rep's range is measured
+    /// over — it can't start at the descent, which is only recognised after
+    /// the dwell margin has already been travelled.
+    private mutating func enterTop(at elbow: Double) {
+        phase = .top
+        repMin = elbow
+        repMax = elbow
+    }
+
     private var dwellMargin: Double {
-        guard let range = observedRange, isCalibrated else { return 10 }
+        guard let range = workingRange else { return 10 }
         return max(5, range * 0.1)
     }
 

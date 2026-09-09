@@ -111,16 +111,57 @@ struct PushUpTracker: MovementTracker {
     /// Last angle fed to `observeRange`, to tell moving from holding still.
     private var lastRangeAngle: Double?
 
+    /// Extremes of the rep currently under way.
+    private var repMin: Double?
+    private var repMax: Double?
+
+    /// The range a *completed rep* showed us, which is what the gates use
+    /// once there is one.
+    ///
+    /// Learning the range from every frame the body is horizontal was the
+    /// mistake, and it produced three complaints at once. Setting up in a
+    /// plank holds the elbows locked, which reads ~178°, while the top people
+    /// actually return to between reps is nearer 160° — so the observed
+    /// maximum came from the setup rather than from any rep. Every gate is a
+    /// *fraction of the range*, so one inflated end pushed the bottom gate up
+    /// (barely have to go down for it to count) and the lockout gate up with
+    /// it (have to go all the way back up before it will). And because the
+    /// extremes kept moving as the set went on, the gates — and the meter's
+    /// line drawn at them — changed after every rep.
+    ///
+    /// A finished rep is the honest sample: it contains exactly one top and
+    /// one bottom, both of them yours, neither of them your setup. The first
+    /// one sets the range and it then holds for the set, so the line lands
+    /// once and stays put.
+    private var settledMin: Double?
+    private var settledMax: Double?
+
     var observedRange: Double? {
         guard let observedMin, let observedMax else { return nil }
         return observedMax - observedMin
     }
 
-    /// True once enough travel has been seen to trust the person's own range.
+    var settledRange: Double? {
+        guard let settledMin, let settledMax else { return nil }
+        return settledMax - settledMin
+    }
+
+    /// True once a completed rep has defined the range. Until then the gates
+    /// run on the rougher running observation, which is what lets the *first*
+    /// rep be detected at all.
+    var isSettled: Bool { settledRange != nil }
+
+    /// True once enough travel has been seen to try counting.
     var isCalibrated: Bool { (observedRange ?? 0) >= minimumRange }
+
+    /// The range the gates are computed from.
+    var workingRange: Double? { settledRange ?? (isCalibrated ? observedRange : nil) }
 
     /// Angle at or above which the arm counts as extended.
     var topThreshold: Double {
+        if let settledMax, let range = settledRange {
+            return settledMax - range * topGateFraction
+        }
         guard isCalibrated, let observedMax, let range = observedRange else {
             return lockoutAngle
         }
@@ -129,6 +170,9 @@ struct PushUpTracker: MovementTracker {
 
     /// Angle at or below which the rep counts as deep enough.
     var bottomThreshold: Double {
+        if let settledMin, let range = settledRange {
+            return settledMin + range * bottomGateFraction
+        }
         guard isCalibrated, let observedMin, let range = observedRange else {
             return bottomAngle
         }
@@ -141,11 +185,14 @@ struct PushUpTracker: MovementTracker {
     var extendedAngle: Double = 180
     var floorAngle: Double = 80
 
+    /// The line is drawn only once a rep has settled the range. Drawing it
+    /// off the running observation meant it slid down the bar through the
+    /// first descent and shifted again after every rep.
     var depthGauge: DepthGauge? {
         guard isInPosition, let elbow = lastElbowAngle else { return nil }
         return DepthGauge(
             depth: onScale(elbow),
-            countsAt: isCalibrated ? onScale(bottomThreshold) : nil
+            countsAt: isSettled ? onScale(bottomThreshold) : nil
         )
     }
 
@@ -188,6 +235,8 @@ struct PushUpTracker: MovementTracker {
         guard horizontal, let elbow = lastElbowAngle else { return nil }
 
         observeRange(elbow)
+        repMin = min(elbow, repMin ?? elbow)
+        repMax = max(elbow, repMax ?? elbow)
         progress.repProgress = normalizedDepth(elbow)
 
         if let event = checkForm(pose) { return event }
@@ -201,6 +250,10 @@ struct PushUpTracker: MovementTracker {
         observedMin = nil
         observedMax = nil
         lastRangeAngle = nil
+        repMin = nil
+        repMax = nil
+        settledMin = nil
+        settledMax = nil
     }
 
     // MARK: - Calibration
@@ -246,7 +299,7 @@ struct PushUpTracker: MovementTracker {
         case .awaitingLockout:
             // Needs calibration first, so the very first motion establishes
             // the range rather than being judged against a guess.
-            if isCalibrated, elbow >= top { phase = .top }
+            if isCalibrated, elbow >= top { enterTop(at: elbow) }
 
         case .top:
             // Require a clear departure before believing a rep has started;
@@ -258,23 +311,53 @@ struct PushUpTracker: MovementTracker {
                 phase = .bottom
             } else if elbow >= top {
                 // Went back up without reaching depth — not a rep.
-                phase = .top
+                enterTop(at: elbow)
             }
 
         case .bottom:
             if elbow >= top {
-                phase = .top
                 progress.reps += 1
+                settleRange(closingAt: elbow)
+                enterTop(at: elbow)
                 return .repCompleted(total: progress.reps)
             }
         }
         return nil
     }
 
+    /// Arriving at the top opens the window the next rep's range is measured
+    /// over. It has to start here rather than when the descent is detected:
+    /// a descent is only recognised once you've already dropped past the
+    /// dwell margin, so measuring from there would shave that much off the
+    /// top of every rep and quietly under-report your range.
+    private mutating func enterTop(at elbow: Double) {
+        phase = .top
+        repMin = elbow
+        repMax = elbow
+    }
+
+    /// Takes the range from the rep that just finished.
+    ///
+    /// The first real rep sets it and it then holds, so the gates and the
+    /// meter's line stop moving under you. A later rep replaces it only if it
+    /// travelled a good deal further — which recovers from a first rep that
+    /// was a half-hearted warm-up, without letting the target drift rep by
+    /// rep, which is the thing that made it unreadable.
+    private mutating func settleRange(closingAt elbow: Double) {
+        let low = min(repMin ?? elbow, elbow)
+        let high = max(repMax ?? elbow, elbow)
+        let travel = high - low
+        guard travel >= minimumRange else { return }
+        if let settled = settledRange, travel <= settled * 1.25 { return }
+
+        settledMin = low
+        settledMax = high
+    }
+
     /// Dead band around a gate, scaled to the person's range so it means the
     /// same thing whether they travel 50° or 100°.
     private var dwellMargin: Double {
-        guard let range = observedRange, isCalibrated else { return 10 }
+        guard let range = workingRange else { return 10 }
         return max(5, range * 0.1)
     }
 

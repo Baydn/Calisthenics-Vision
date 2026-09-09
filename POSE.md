@@ -218,6 +218,19 @@ The pattern, from `PushUpTracker`:
    because you've since done reps that didn't reach it, not because time
    passed — decaying through a rest ate the range at 1.5°/s, so half a minute
    holding the top of a plank un-learned the person mid-set.
+
+   **This running observation exists only to detect the first rep.** Once a
+   rep completes, the range is taken from *that rep* (`settledMin`/
+   `settledMax`) and held for the set. Every frame in position was the wrong
+   sample: setting up in a plank holds the elbows locked at ~178° while the
+   top people return to between reps is nearer 160°, so the setup — not the
+   reps — set the maximum. Since every gate is a fraction of the range, one
+   inflated end pushed the depth gate *up* (barely have to go down) and the
+   lockout gate up with it (have to go all the way back up), and the gates
+   moved after every rep. A finished rep holds exactly one top and one
+   bottom, both of them yours. The window opens on arriving at the rest
+   position — not when the descent is detected, which is already a dwell
+   margin late.
 2. Refuse to count until total travel exceeds `minimumRange` (**45°**), so
    fidgeting in position can't calibrate its way into counting.
 3. Place gates as *fractions into the observed range*, not absolute angles.
@@ -435,7 +448,7 @@ For a segmented hold additionally: several attempts recorded separately, rest
 between them uncounted, a brief dropout not splitting one hold, a sub-second
 blip discarded along with its time, and finishing mid-hold keeping it.
 
-Current coverage: **38 push-up, 46 handstand, 24 pull-up, 21 squat, 25 dip, 110 planche, planche push-up, depth-meter scale and range-decay, 17 body-plausibility checks (281 total)**, all passing.
+Current coverage: **38 push-up, 46 handstand, 24 pull-up, 21 squat, 25 dip, 128 planche, planche push-up, depth-meter scale and range calibration, 17 body-plausibility checks (299 total)**, all passing.
 
 A fixture that shares a bug with the code proves nothing — the aspect-ratio
 distortion bug passed 14 tests because the fixtures were generated in the
@@ -471,6 +484,7 @@ Every rule above, and the bug that earned it.
 | Skeleton flashing onto furniture and empty rooms | Any non-empty landmark array was accepted — no geometry check, no confidence check, no persistence requirement | §3b |
 | A set of short holds reported as one long hold | Personal records read the session total rather than the best attempt | §8 |
 | A push-up lockout timed as a planche | The gate assumed a push-up's hip rides down at hand level. It doesn't — only the hands and toes are on the floor, so the body is a diagonal and the hip sits *midway*, which passed the test. The harness fixture was built from the same wrong picture, so 38 checks agreed with it | §12 |
+| Barely had to go down for a rep to count, but had to go all the way back up before it would — and the target moved after every rep | The range was learned from every frame in position, so the plank you set up in (elbows locked, ~178°) set the maximum instead of your reps (~160°). Gates are fractions of the range, so an inflated end loosened the depth gate and tightened the lockout gate at once | §6 |
 | Gates collapsed and a small bob scored a rep after a rest; the meter's line wandered up the bar, then jumped to the bottom | Range decay ran every frame in position, including while holding still, at 1.5°/s. After ~20 s motionless the range fell under `minimumRange` and the tracker un-learned the person mid-set. Decay now needs movement, and floors at `minimumRange` | §6 |
 | The depth meter's line sat at the floor of the bar, then leapt on the first rep | The pre-calibration seed (`bottomAngle` 90°) was drawn as if it were a real gate. It lands 90% down a bar scaled 180°→80°, nowhere near anyone's actual gate. No line until the range is known | §6 |
 | The depth meter swung end to end on a fidget, and changed meaning mid-set | The bar was drawn against the person's own observed range, which drifts every frame on purpose. A gauge needs fixed units; only the *line* on it should be personal | Law 3 (what it does and doesn't govern) |
