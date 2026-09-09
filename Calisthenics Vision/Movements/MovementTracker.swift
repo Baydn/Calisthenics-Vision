@@ -43,6 +43,20 @@ struct HoldSegment: Equatable {
     var isLandedKickUp: Bool { duration >= Self.kickUpSuccessSeconds }
 }
 
+/// What a movement's line is supposed to be measured against.
+///
+/// `.endToEnd` only shows *bend*: a body that is perfectly straight but held
+/// at the wrong angle reads as perfect against it. Where gravity decides
+/// what the right angle is, the reference has to come from gravity instead.
+enum IdealLine: Equatable {
+    /// A plumb line through the base of support — hands, or the bar.
+    case vertical
+    /// Level with the ground.
+    case horizontal
+    /// The straight line between the ends of the chain.
+    case endToEnd
+}
+
 enum FormIssue: String, Equatable {
     case hipSag = "Keep your hips in line"
     case shallowRep = "Go lower"
@@ -50,6 +64,10 @@ enum FormIssue: String, Equatable {
     case kipping = "Keep your legs still"
     case kneeCave = "Push your knees out"
     case shallowDip = "Go deeper"
+    /// A planche's own fault, and the common one: the body is straight but
+    /// tilted, hips riding up above shoulder height. "Straighten your line"
+    /// would be wrong advice — the line *is* straight.
+    case hipsNotLevel = "Level your hips"
 }
 
 /// Running totals a tracker exposes for the HUD.
@@ -146,6 +164,7 @@ extension Movement {
         case .dip:       DipTracker()
         case .handstand: HandstandTracker()
         case .planche:   PlancheTracker()
+        case .planchePushUp: PlanchePushUpTracker()
         default:         nil
         }
     }
@@ -160,9 +179,13 @@ extension Movement {
     /// overlay mirrors them to whichever side the camera can see.
     var focusAngle: (vertex: PoseJoint, from: PoseJoint, to: PoseJoint, label: String)? {
         switch self {
+        // A handstand's shoulder wants to be open at 180°; a planche's wants
+        // to be closed at roughly 60°, because that angle *is* the lean out
+        // past the hands. Same joint, opposite ideal — which is why the
+        // chart bands for the two can't be shared.
         case .handstand, .planche:
             (.leftShoulder, .leftWrist, .leftHip, "Shoulder")
-        case .pushUps, .dip, .pullUps:
+        case .pushUps, .dip, .pullUps, .planchePushUp:
             (.leftElbow, .leftShoulder, .leftWrist, "Elbow")
         case .squat:
             (.leftKnee, .leftHip, .leftAnkle, "Knee")
@@ -181,8 +204,9 @@ extension Movement {
         // Hands are part of the line when you're standing on them.
         case .handstand, .handstandPushUp:
             [.leftWrist, .leftShoulder, .leftHip, .leftAnkle]
-        case .pushUps, .plank, .hollowBody, .planche, .frontLever, .backLever,
-             .elbowLever, .dip, .pullUps, .deadHang, .oneArmPullUp, .muscleUps:
+        case .pushUps, .plank, .hollowBody, .planche, .planchePushUp,
+             .frontLever, .backLever, .elbowLever, .dip, .pullUps, .deadHang,
+             .oneArmPullUp, .muscleUps:
             [.leftShoulder, .leftHip, .leftAnkle]
         // An L-sit's legs are meant to be at ninety degrees to the torso, so
         // there is no straight line to hold and nothing honest to draw.
@@ -191,35 +215,41 @@ extension Movement {
         }
     }
 
-    /// Whether the line this movement holds is meant to be vertical.
+    /// What the line this movement holds is meant to be measured against.
     ///
-    /// A handstand or a hang is judged against gravity — being straight but
-    /// leaning is still a fault, and only a vertical reference shows that.
-    /// A push-up's line is horizontal, so vertical would mean nothing there
-    /// and the reference is drawn end to end instead.
-    ///
-    /// "Vertical" here means vertical *in the picture*. Capture rotates with
-    /// the interface, so that matches gravity for a phone stood up or laid on
-    /// its side — which is every way you'd prop one to film this. A phone
-    /// tilted back leans the reference with it.
-    var holdsAVerticalLine: Bool {
+    /// "Vertical" and "level" here mean vertical and level *in the picture*.
+    /// Capture rotates with the interface, so that matches gravity for a
+    /// phone stood up or laid on its side — which is every way you'd prop one
+    /// to film this. A phone tilted back leans the reference with it.
+    var idealLine: IdealLine {
         switch self {
+        // Judged against gravity: straight but leaning is still a fault, and
+        // only a plumb line through the hands or the bar shows it.
         case .handstand, .handstandPushUp, .deadHang, .pullUps, .oneArmPullUp,
              .muscleUps, .dip:
-            true
+            .vertical
+        // Held parallel to the ground, which is the same argument turned on
+        // its side: a planche with the hips riding high is straight and still
+        // wrong, and only a level reference shows that. The gymnastics
+        // standard says the same thing — 45° off level stops being a planche.
+        case .planche, .planchePushUp, .frontLever, .backLever, .elbowLever,
+             .humanFlag:
+            .horizontal
+        // A push-up or a plank runs from raised shoulders down to feet on the
+        // floor. That line is a diagonal, not a level one, so the only honest
+        // reference is the one drawn end to end.
         default:
-            false
+            .endToEnd
         }
     }
 
     /// A one-time framing tip (BACKLOG.md F5), never a gate — a movement
     /// whose line runs the length of the body loses more of it to a portrait
     /// frame than one whose line runs top to bottom does, so the same
-    /// horizontal/vertical split `holdsAVerticalLine` already draws answers
-    /// this too. Nil for anything with no line to fit in frame in the first
-    /// place.
+    /// horizontal/vertical split `idealLine` already draws answers this too.
+    /// Nil for anything with no line to fit in frame in the first place.
     var cameraAngleHint: String? {
-        guard alignmentChain != nil, !holdsAVerticalLine else { return nil }
+        guard alignmentChain != nil, idealLine != .vertical else { return nil }
         return "Films better in landscape — your whole line fits in frame"
     }
 
@@ -239,6 +269,7 @@ extension Movement {
         case .dip:       DipTracker.isSupported(pose)
         case .handstand: HandstandTracker.isInverted(pose)
         case .planche:   PlancheTracker.isSupported(pose)
+        case .planchePushUp: PlanchePushUpTracker.isInPosition(pose)
         default:         nil
         }
     }

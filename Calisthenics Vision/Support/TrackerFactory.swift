@@ -41,6 +41,11 @@ enum TrackerFactory {
             tracker.bottomGateFraction = depth
             return tracker
 
+        case .planchePushUp:
+            var tracker = PlanchePushUpTracker()
+            tracker.bottomGateFraction = depth
+            return tracker
+
         case .pullUps:
             var tracker = PullUpTracker()
             // Named for the top on a pull-up, but the same idea: how far into

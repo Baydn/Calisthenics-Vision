@@ -303,7 +303,7 @@ enum Movement: String, CaseIterable, Identifiable, Hashable, Codable {
     /// wherever the tracker gates on a fraction of the person's own range.
     var tunesRepDepth: Bool {
         switch self {
-        case .pushUps, .pullUps, .squat, .dip: true
+        case .pushUps, .pullUps, .squat, .dip, .planchePushUp: true
         default: false
         }
     }

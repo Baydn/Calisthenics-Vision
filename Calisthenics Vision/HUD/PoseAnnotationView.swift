@@ -72,7 +72,8 @@ struct PoseAnnotationView: View {
         // reference shows it. For a push-up, whose line is horizontal, a
         // vertical reference would mean nothing, so it runs end to end.
         var ideal = Path()
-        if movement.holdsAVerticalLine {
+        switch movement.idealLine {
+        case .vertical:
             // Spans the body rather than stopping at the joints, so it reads
             // as a reference line and not as another limb.
             let ys = points.map(\.y)
@@ -81,7 +82,16 @@ struct PoseAnnotationView: View {
             let margin = (bottom - top) * 0.06
             ideal.move(to: CGPoint(x: first.x, y: top - margin))
             ideal.addLine(to: CGPoint(x: first.x, y: bottom + margin))
-        } else {
+        case .horizontal:
+            // The same idea laid flat: level through the shoulders, so a
+            // planche whose hips ride high shows the body climbing off it.
+            let xs = points.map(\.x)
+            let leading = xs.min() ?? first.x
+            let trailing = xs.max() ?? first.x
+            let margin = (trailing - leading) * 0.06
+            ideal.move(to: CGPoint(x: leading - margin, y: first.y))
+            ideal.addLine(to: CGPoint(x: trailing + margin, y: first.y))
+        case .endToEnd:
             ideal.move(to: first)
             ideal.addLine(to: last)
         }

@@ -1,0 +1,266 @@
+//
+//  PlanchePushUpTracker.swift
+//  Calisthenics Vision
+//
+//  Planche push-up rep counting. Measurement rules: POSE.md. The position
+//  test lives in PlancheGeometry.
+//
+//  The rep half is the push-up's, unchanged and for the same reasons: the
+//  finished position is the locked-out one, so a rep scores on the way back
+//  up, and the gates are fractions into the person's own observed elbow range
+//  rather than fixed angles (Law 3). Someone strong enough to do these has a
+//  smaller usable range than a floor push-up, not a bigger one — the lean
+//  eats travel — which is exactly the case a fixed 90° bottom gate would
+//  count zero of.
+//
+//  The position half is the planche's, with two thresholds relaxed, and the
+//  relaxation is the whole design problem. A planche push-up bends the elbow
+//  and lowers the shoulders to hand height and past it at the bottom, which
+//  is precisely where the rep is decided. A gate that demanded locked arms or
+//  a full hand-below-shoulder drop would let go at the bottom of every good
+//  rep and count none of them — the failure `DipTracker.isSupported` carries
+//  a comment about. So the arm is left out of the gate entirely (it's the
+//  thing being counted, not evidence of position) and the hip and hand drops
+//  are widened to cover the bottom of the rep.
+//
+//  What still holds the gate up is the pair of things a push-up can't fake:
+//  the legs are up at body height rather than hanging to the floor, and the
+//  shoulders sit out past the hands. Both survive the whole rep.
+//
+
+import Foundation
+import simd
+
+struct PlanchePushUpTracker: MovementTracker {
+
+    /// Seeds, used only until the person's own range is known.
+    var lockoutAngle: Double = 165
+    var bottomAngle: Double = 100
+
+    /// Elbow travel required before this is treated as reps at all, so
+    /// wobbling in a static planche can't calibrate its way into counting.
+    var minimumRange: Double = 35
+    /// How far into your own range a rep has to travel to count. Loose:
+    /// depth coaching belongs in form feedback, not in withholding the count.
+    var bottomGateFraction: Double = 0.42
+    /// How close to lockout re-arms the counter.
+    var topGateFraction: Double = 0.25
+
+    var minConfidence: Float = 0.5
+    /// ~0.5s at 30 FPS.
+    var framesToFlag = 15
+    /// Deviation beyond which the line is called out, in the same units
+    /// `PlancheTracker` scores in.
+    var warnDeviation: Double = 45
+
+    private(set) var progress = MovementProgress()
+
+    private enum Phase {
+        /// Wait for a lockout, so arriving already bent isn't a free rep.
+        case awaitingLockout
+        case top, descending, bottom
+    }
+    private var phase: Phase = .awaitingLockout
+    private var badFormFrames = 0
+
+    private(set) var isInPosition = false
+    private(set) var reading: PlancheGeometry.Reading?
+    private(set) var lastElbowAngle: Double?
+
+    private(set) var observedMin: Double?
+    private(set) var observedMax: Double?
+
+    var observedRange: Double? {
+        guard let observedMin, let observedMax else { return nil }
+        return observedMax - observedMin
+    }
+
+    var isCalibrated: Bool { (observedRange ?? 0) >= minimumRange }
+
+    var topThreshold: Double {
+        guard isCalibrated, let observedMax, let range = observedRange else { return lockoutAngle }
+        return observedMax - range * topGateFraction
+    }
+
+    var bottomThreshold: Double {
+        guard isCalibrated, let observedMin, let range = observedRange else { return bottomAngle }
+        return observedMin + range * bottomGateFraction
+    }
+
+    /// Where `repProgress` reaches once the elbow crosses `bottomThreshold`.
+    var depthGateProgress: Double? {
+        guard isCalibrated else { return nil }
+        return 1 - bottomGateFraction
+    }
+
+    var diagnostics: TrackerDiagnostics {
+        var d = TrackerDiagnostics()
+        d.isReady = isInPosition
+        d.readyLabel = isInPosition ? "in planche" : "not in position"
+        d.primaryAngleLabel = "elbow"
+        d.primaryAngle = lastElbowAngle
+        d.secondaryAngleLabel = "lean"
+        d.secondaryAngle = reading.map { $0.leanFraction * 100 }
+        if !isInPosition {
+            d.note = "waiting for the lean"
+            d.noteIsWarning = true
+        } else if !isCalibrated {
+            d.note = "calibrating…"
+            d.noteIsWarning = true
+        } else {
+            d.note = String(format: "gates %.0f°/%.0f°", bottomThreshold, topThreshold)
+        }
+        return d
+    }
+
+    mutating func update(pose: Pose?, timestampMs: Int) -> MovementEvent? {
+        guard let pose else {
+            isInPosition = false
+            reading = nil
+            lastElbowAngle = nil
+            return nil
+        }
+
+        reading = PlancheGeometry.read(pose)
+        lastElbowAngle = elbowAngle(pose)
+
+        let supported = PlancheGeometry.isPlanchePosition(pose, lockedArms: false)
+        if supported != isInPosition {
+            isInPosition = supported
+            // Leaving the position abandons a half-finished rep rather than
+            // letting it complete the next time you get back on the bars.
+            phase = .awaitingLockout
+            if !supported {
+                badFormFrames = 0
+                if !progress.isFormValid {
+                    progress.isFormValid = true
+                    return .formRecovered
+                }
+            }
+        }
+        guard supported, let elbow = lastElbowAngle else { return nil }
+
+        observeRange(elbow)
+        progress.repProgress = normalizedDepth(elbow)
+
+        if let event = checkForm() { return event }
+        return advance(elbow: elbow)
+    }
+
+    mutating func reset() {
+        progress = MovementProgress()
+        phase = .awaitingLockout
+        badFormFrames = 0
+        observedMin = nil
+        observedMax = nil
+    }
+
+    // MARK: - Calibration
+
+    private mutating func observeRange(_ elbow: Double) {
+        let decay = 0.05                       // ≈1.5°/s at 30 FPS
+        observedMax = max(elbow, (observedMax ?? elbow) - decay)
+        observedMin = min(elbow, (observedMin ?? elbow) + decay)
+    }
+
+    // MARK: - Rep phases
+
+    private mutating func advance(elbow: Double) -> MovementEvent? {
+        let top = topThreshold
+        let bottom = bottomThreshold
+
+        switch phase {
+        case .awaitingLockout:
+            if isCalibrated, elbow >= top { phase = .top }
+
+        case .top:
+            if elbow < top - dwellMargin { phase = .descending }
+
+        case .descending:
+            if elbow <= bottom {
+                phase = .bottom
+            } else if elbow >= top {
+                phase = .top
+            }
+
+        case .bottom:
+            if elbow >= top {
+                phase = .top
+                progress.reps += 1
+                return .repCompleted(total: progress.reps)
+            }
+        }
+        return nil
+    }
+
+    private var dwellMargin: Double {
+        guard let range = observedRange, isCalibrated else { return 10 }
+        return max(5, range * 0.1)
+    }
+
+    /// 0 at lockout, 1 at the bottom of your range.
+    private func normalizedDepth(_ elbow: Double) -> Double {
+        let high = observedMax ?? lockoutAngle
+        let low = observedMin ?? bottomAngle
+        let span = high - low
+        guard span > 0 else { return 0 }
+        return min(1, max(0, (high - elbow) / span))
+    }
+
+    // MARK: - Form
+
+    /// Same judgement the static planche makes — level first, straight second
+    /// — and, as there, it never withholds a rep.
+    private mutating func checkForm() -> MovementEvent? {
+        guard let reading, reading.isMeasurable else {
+            badFormFrames = 0
+            if !progress.isFormValid {
+                progress.isFormValid = true
+                return .formRecovered
+            }
+            return nil
+        }
+
+        var worst = reading.levelDeviation * 90 / PlancheGeometry.levelTaperDegrees
+        var issue = FormIssue.hipsNotLevel
+        if let straightness = reading.straightness, abs(180 - straightness) > worst {
+            worst = abs(180 - straightness)
+            issue = .lostAlignment
+        }
+        progress.formQuality = max(0, 1 - worst / 90)
+
+        if worst > warnDeviation {
+            badFormFrames += 1
+            if badFormFrames == framesToFlag {
+                progress.isFormValid = false
+                progress.formBreaks += 1
+                return .formBreak(issue)
+            }
+        } else {
+            badFormFrames = 0
+            if !progress.isFormValid {
+                progress.isFormValid = true
+                return .formRecovered
+            }
+        }
+        return nil
+    }
+
+    // MARK: - Measurements
+
+    private func elbowAngle(_ pose: Pose) -> Double? {
+        let left = PlancheGeometry.confidence(pose, .leftShoulder, .leftElbow, .leftWrist)
+        let right = PlancheGeometry.confidence(pose, .rightShoulder, .rightElbow, .rightWrist)
+        guard max(left, right) >= minConfidence else { return nil }
+
+        return left >= right
+            ? pose.angle(at: .leftElbow, from: .leftShoulder, to: .leftWrist)
+            : pose.angle(at: .rightElbow, from: .rightShoulder, to: .rightWrist)
+    }
+
+    // MARK: - Orientation
+
+    static func isInPosition(_ pose: Pose) -> Bool {
+        PlancheGeometry.isPlanchePosition(pose, lockedArms: false)
+    }
+}

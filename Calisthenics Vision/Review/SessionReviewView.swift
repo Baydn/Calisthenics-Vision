@@ -421,8 +421,13 @@ struct SessionReviewView: View {
         case .skeleton:
             return "Every tracked joint, frame by frame."
         case .line:
-            if session.movement.holdsAVerticalLine {
+            switch session.movement.idealLine {
+            case .vertical:
                 return "Dashed is straight up from your hands — lean shows as the body drifting off it. Solid is the line you made; the gap between them is the bend."
+            case .horizontal:
+                return "Dashed is level with the ground, which is where this is meant to be held. Hips riding above it is the fault to watch, even when your line is straight."
+            case .endToEnd:
+                break
             }
             let chain = session.movement.alignmentChain
             let ends = [chain?.first, chain?.last].compactMap { $0?.shortName.lowercased() }

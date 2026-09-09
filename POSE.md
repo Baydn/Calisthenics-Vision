@@ -363,6 +363,16 @@ deviating from it is how bugs get in:
    an emitted event.
 6. **Advance the state machine.** Return at most one event per frame.
 
+**Copying a tracker copies its idea of what "good" looks like.** The state
+machine is nearly always reusable; the scoring nearly never is. Before reusing
+a quality function, ask what shape the movement is actually meant to hold:
+a handstand wants every joint at 180°, a planche wants the arm closed to ~60°
+and the *body* level with the ground, an L-sit wants the hip at 90°. Scoring
+the second against the first gave a correct planche zero out of a hundred.
+The same goes for the reference line the overlay draws (`Movement.idealLine`)
+— end-to-end shows bend only, so anything whose correct angle is set by
+gravity needs a plumb or a level reference instead.
+
 Also required:
 - Populate `TrackerDiagnostics` honestly — `isReady`, both labelled angles,
   and a `note` explaining *why* nothing is counting ("calibrating…",
@@ -412,7 +422,7 @@ For a segmented hold additionally: several attempts recorded separately, rest
 between them uncounted, a brief dropout not splitting one hold, a sub-second
 blip discarded along with its time, and finishing mid-hold keeping it.
 
-Current coverage: **38 push-up, 46 handstand, 24 pull-up, 21 squat, 25 dip, 38 planche, 17 body-plausibility checks (209 total)**, all passing.
+Current coverage: **38 push-up, 46 handstand, 24 pull-up, 21 squat, 25 dip, 86 planche and planche push-up, 17 body-plausibility checks (257 total)**, all passing.
 
 A fixture that shares a bug with the code proves nothing — the aspect-ratio
 distortion bug passed 14 tests because the fixtures were generated in the
@@ -447,6 +457,8 @@ Every rule above, and the bug that earned it.
 | Fixture and code sharing a bug | A tracker's test fixture must build poses from limb lengths and physical reasoning, never from the tracker's own maths — the pull-up harness asserts the generator produces the angle it claims before testing anything else | §12 |
 | Skeleton flashing onto furniture and empty rooms | Any non-empty landmark array was accepted — no geometry check, no confidence check, no persistence requirement | §3b |
 | A set of short holds reported as one long hold | Personal records read the session total rather than the best attempt | §8 |
+| A push-up lockout timed as a planche | The gate assumed a push-up's hip rides down at hand level. It doesn't — only the hands and toes are on the floor, so the body is a diagonal and the hip sits *midway*, which passed the test. The harness fixture was built from the same wrong picture, so 38 checks agreed with it | §12 |
+| A textbook planche scored 0% line quality | The handstand's scoring was copied along with its state machine. A handstand's arm is in line with its torso at 180°; a planche's is meant to sit at ~60°, because that angle *is* the lean holding it up | §11 |
 
 ---
 
@@ -482,12 +494,19 @@ never a gate) · `minConfidence 0.5` · `framesToFlag 20` · `maxFrameGapMs 500`
 `HoldSegment.kickUpSuccessSeconds 2.0` · quality taper `90°` → 0
 · inversion separation `0.3 m`
 
-**PlancheTracker** — same hold-segmentation constants as HandstandTracker
-(`idealAlignment 180` · `warnDeviation 45` · `minConfidence 0.5` ·
-`framesToFlag 20` · `maxFrameGapMs 500` · `holdGapToleranceMs 400` ·
-`minimumHoldSeconds 1.0`) · orientation gate: elbow `> 140°` (locked, rules
-out an elbow lever) · body-line verticality `< 0.5` (horizontal, rules out a
-handstand or dip) · hip must sit closer to shoulder height than to wrist
-height, with the wrist-to-hip gap `> 0.2 ×` body length first (rules out a
-push-up lockout, where the reverse is true, and lying flat, where neither gap
-exists) — see `PlancheTracker.isSupported` for the physical reasoning
+**PlancheGeometry** (the gate both planche movements share) —
+`lockedElbowAngle 140` (static hold only; the push-up bends the arm on
+purpose) · `extendedKneeAngle 150` (below it the body is tucked and
+straightness isn't scored) · lean `> 0.2 ×` torso · hand drop `> 0.4 ×` torso
+(static) / `> −0.3` (push-up, whose shoulders sink past the hands at the
+bottom) · level `< 45°` (static) / `< 55°` (push-up) · feet above hands
+`> 0.4 ×` torso · `levelTaperDegrees 45`
+
+**PlancheTracker** — hold segmentation as HandstandTracker (`minConfidence
+0.5` · `framesToFlag 20` · `maxFrameGapMs 500` · `holdGapToleranceMs 400` ·
+`minimumHoldSeconds 1.0`) · `warnDeviation 35`, scored as the worst of level
+and straightness, never gating
+
+**PlanchePushUpTracker** — `lockoutAngle 165` `bottomAngle 100` (seeds only) ·
+`minimumRange 35` · `bottomGateFraction 0.42` · `topGateFraction 0.25` ·
+`framesToFlag 15` · `warnDeviation 45`
