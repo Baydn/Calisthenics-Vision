@@ -18,8 +18,12 @@
 //  you — holding the last value it saw would be a frozen gauge reading as a
 //  live one, which is the lie the skeleton's faded state exists to avoid.
 //
-//  Not animated: this tracks pose data at capture frame rate, and easing it
-//  would put the bar behind the body it's meant to be read against.
+//  Lightly smoothed (`Theme.Motion.gauge`). It was deliberately un-animated
+//  at first, on the reasoning that easing live data puts the bar behind the
+//  body — true, but a raw landmark estimate stutters enough at 30 FPS to be
+//  unpleasant to read. The spring is short enough to still feel attached.
+//  Only the *fill* is smoothed; the line is a fixed target and has nothing
+//  to smooth.
 //
 
 import SwiftUI
@@ -49,6 +53,7 @@ struct DepthMeterView: View {
                               ? Theme.Color.valid
                               : Theme.Color.primaryText.opacity(0.92))
                         .frame(height: height * min(1, max(0, depth)))
+                        .animation(Theme.Motion.gauge, value: depth)
                 }
             }
             .frame(width: width, height: height)

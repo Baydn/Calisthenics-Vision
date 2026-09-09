@@ -54,11 +54,11 @@ struct PushUpTracker: MovementTracker {
 
     /// How close to your own measured bottom counts, in degrees.
     ///
-    /// This can only ever make the gate **more forgiving** than the standard,
-    /// never stricter — see `bottomThreshold`. That asymmetry is the whole
-    /// point: it's what stops someone whose elbow reads 120° at their deepest
-    /// from counting zero reps forever (POSE.md Law 3), without letting the
-    /// target the rest of us are aiming at wander around.
+    /// Applies **only** where a rep has shown the standard is out of reach —
+    /// see `bottomThreshold`. That condition is the whole point: it's what
+    /// stops someone whose elbow reads 120° at their deepest from counting
+    /// zero reps forever (POSE.md Law 3), without loosening the gate under
+    /// everyone who was already clearing it.
     var depthTolerance: Double = 15
 
     /// Landmarks below this confidence are ignored — an occluded arm reports
@@ -189,15 +189,26 @@ struct PushUpTracker: MovementTracker {
         extendedAngle - standardDepthFraction * (extendedAngle - floorAngle)
     }
 
-    /// Angle at or below which the rep counts as deep enough.
+    /// Angle at or below which the rep counts as deep enough. **This is what
+    /// the meter draws**, so it is the truth about where the line is.
     ///
-    /// The standard, or your own bottom plus a tolerance — whichever is
-    /// **easier to reach**. Calibration only ever forgives here. Someone
-    /// whose deepest rep reads 120° gets a gate that meets them; everyone
-    /// else is judged against the line they can see, which is what makes the
-    /// line worth looking at.
+    /// The standard, unless a rep has shown that the standard is out of
+    /// reach. Taking `max(standard, bottom + tolerance)` unconditionally —
+    /// the previous attempt — loosened the gate for people who never needed
+    /// it: reach 95° against a 108° standard and you're past the line, but
+    /// the max still moved the gate to 110°, so reps counted a visible
+    /// distance short of the line you were being shown. A line that isn't
+    /// the gate is worse than no line.
+    ///
+    /// The loosening survives for the case it exists for — someone whose
+    /// deepest rep reads *shallower* than the standard would otherwise count
+    /// zero forever (POSE.md Law 3) — and there it moves the drawn line too,
+    /// so the two never disagree.
     var bottomThreshold: Double {
-        max(standardDepthAngle, (settledMin ?? -.infinity) + depthTolerance)
+        guard let settledMin, settledMin > standardDepthAngle else {
+            return standardDepthAngle
+        }
+        return settledMin + depthTolerance
     }
 
     /// Ends of the scale the depth meter is drawn on: a straight arm at the
@@ -213,16 +224,13 @@ struct PushUpTracker: MovementTracker {
     /// bar and its line are there from the first frame of the recording, and
     /// stay put while you walk in and out of shot.
     ///
-    /// The line is drawn at the **standard**, not at `bottomThreshold`, and
-    /// those differ only when calibration has loosened the gate for a short
-    /// range. Drawing the loosened one moved the line — by a couple of
-    /// percent, but it moved, and a target that shifts is the thing being
-    /// fixed here. Since the gate is never *stricter* than the standard, the
-    /// promise the line makes is still kept: reach it and the rep counts.
+    /// The line is drawn at `bottomThreshold` — the gate itself, never a
+    /// stand-in for it. Anything else and "reach the line" stops meaning
+    /// "the rep counts", which is the only job the line has.
     var depthGauge: DepthGauge? {
         DepthGauge(
             depth: (isInPosition ? lastElbowAngle : nil).map(onScale),
-            countsAt: onScale(standardDepthAngle)
+            countsAt: onScale(bottomThreshold)
         )
     }
 
@@ -386,9 +394,9 @@ struct PushUpTracker: MovementTracker {
     /// It then holds for the set. Your first honest rep is the target, and a
     /// target that moves is not one.
     private mutating func settleDepth(reaching elbow: Double) {
-        guard settledMin == nil,
-              let low = repMin, let high = repMax,
+        guard let low = repMin, let high = repMax,
               high - low >= minimumRange,
+              low < (settledMin ?? .infinity),
               // Turned around: on the way back up from the bottom, rather
               // than still descending.
               elbow > low + 2

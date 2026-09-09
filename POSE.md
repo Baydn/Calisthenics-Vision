@@ -219,15 +219,22 @@ The pattern, from `PushUpTracker`:
    passed — decaying through a rest ate the range at 1.5°/s, so half a minute
    holding the top of a plank un-learned the person mid-set.
 
-   **The depth gate is a standard first, and calibration only forgives.**
+   **The depth gate is a standard first, and calibration only rescues.**
    `standardDepthFraction` puts the line at a fixed place on the meter (0.80
    by default), known before anyone has moved, so it is drawn from the first
-   frame of the recording and never shifts. Your own measured bottom plus
-   `depthTolerance` is taken only when it is *more forgiving* than that
-   standard — which is what stops a short range counting nothing (Law 3)
-   without letting the target wander. The line is drawn at the standard, so
-   "reach the line and it counts" is always true; the gate can only be
-   kinder. Every frame in position was the wrong
+   frame of the recording. The personal loosening applies **only where a rep
+   has shown the standard is out of reach** — deepest reading shallower than
+   the standard — which is what stops a short range counting nothing (Law 3).
+   Taking `max(standard, bottom + tolerance)` unconditionally instead
+   loosened the gate under everyone who was already clearing it, so reps
+   counted a visible distance short of the line they were being shown.
+
+   **The line is drawn at the gate itself, never at a stand-in for it.**
+   Anything else and "reach the line" stops meaning "the rep counts", which
+   is the line's only job. Where the gate does relocate, the line goes with
+   it. `settledMin` only ever deepens, so that relocation can only move the
+   line back *toward* the standard: a shallow first rep can't pin a shallow
+   target on a whole set. Every frame in position was the wrong
    sample: setting up in a plank holds the elbows locked at ~178° while the
    top people return to between reps is nearer 160°, so the setup — not the
    reps — set the maximum. Since every gate is a fraction of the range, one
@@ -246,7 +253,7 @@ The pattern, from `PushUpTracker`:
 
 | Gate | Value | Anchored to |
 |---|---|---|
-| Bottom (depth) | `max(standard, bottom + 15°)` | A fixed place on the meter, loosened by your own bottom. |
+| Bottom (depth) | standard, or `bottom + 15°` when the standard is out of reach | A fixed place on the meter; relocated only to rescue a short range. |
 | Top (lockout) | fraction **0.25** | The top the last rep finished at. |
 
 The depth gate is **not a fraction of the range**, because the range's two
@@ -471,7 +478,7 @@ For a segmented hold additionally: several attempts recorded separately, rest
 between them uncounted, a brief dropout not splitting one hold, a sub-second
 blip discarded along with its time, and finishing mid-hold keeping it.
 
-Current coverage: **38 push-up, 46 handstand, 24 pull-up, 21 squat, 25 dip, 139 planche, planche push-up, depth-meter scale and rep calibration, 17 body-plausibility checks (310 total)**, all passing.
+Current coverage: **38 push-up, 46 handstand, 24 pull-up, 21 squat, 25 dip, 147 planche, planche push-up, depth-meter scale and rep calibration, 17 body-plausibility checks (318 total)**, all passing.
 
 A fixture that shares a bug with the code proves nothing — the aspect-ratio
 distortion bug passed 14 tests because the fixtures were generated in the
@@ -507,6 +514,7 @@ Every rule above, and the bug that earned it.
 | Skeleton flashing onto furniture and empty rooms | Any non-empty landmark array was accepted — no geometry check, no confidence check, no persistence requirement | §3b |
 | A set of short holds reported as one long hold | Personal records read the session total rather than the best attempt | §8 |
 | A push-up lockout timed as a planche | The gate assumed a push-up's hip rides down at hand level. It doesn't — only the hands and toes are on the floor, so the body is a diagonal and the hip sits *midway*, which passed the test. The harness fixture was built from the same wrong picture, so 38 checks agreed with it | §12 |
+| Reps counted while visibly short of the depth line | The gate was `max(standard, bottom + tolerance)`, which loosened for *everyone* rather than only for people who couldn't reach the standard: clear it at 95° against a 108° standard and the max still moved the gate to 110°. The line must be the gate, not a stand-in | §6 |
 | The depth line appeared partway through the set and vanished when the person stepped out of shot | It was drawn from calibrated state, so it existed only once a rep had taught it and only while a pose was visible. A target has to precede the aiming: it's a fixed standard now, and only the fill depends on seeing anyone | §6 |
 | The depth line only appeared on the second rep, and the first rep never counted | Arming needed a calibrated range, but the range only grows once you move — so the counter armed halfway down the first descent, too late to leave a top. The seeded lockout now arms it | §6 |
 | The depth line sat halfway up the bar when it belongs near the bottom | Two causes: the gate was a fraction of a range whose top end came from the setup, and the bar's deep end (80°) was set below where anyone goes, so real travel bunched in the middle | §6 |

@@ -36,9 +36,10 @@ struct DipTracker: MovementTracker {
     /// the first frame of the recording. See `PushUpTracker`.
     var standardDepthFraction: Double = 0.80
 
-    /// How close to your own measured bottom counts, in degrees. Can only
-    /// ever make the gate more forgiving than the standard, never stricter,
-    /// which is what stops a short range counting nothing (Law 3).
+    /// How close to your own measured bottom counts, in degrees. Applies
+    /// *only* where a rep has shown the standard is out of reach, which is
+    /// what stops a short range counting nothing (Law 3). Everyone else is
+    /// judged against the line they can see. See `PushUpTracker`.
     var depthTolerance: Double = 15
 
     var minConfidence: Float = 0.5
@@ -107,7 +108,10 @@ struct DipTracker: MovementTracker {
     }
 
     var bottomThreshold: Double {
-        max(standardDepthAngle, (settledMin ?? -.infinity) + depthTolerance)
+        guard let settledMin, settledMin > standardDepthAngle else {
+            return standardDepthAngle
+        }
+        return settledMin + depthTolerance
     }
 
     /// Ends of the meter's scale: locked out at the top, shoulders below the
@@ -118,7 +122,7 @@ struct DipTracker: MovementTracker {
     var depthGauge: DepthGauge? {
         DepthGauge(
             depth: (isOnBars ? lastElbowAngle : nil).map(onScale),
-            countsAt: onScale(standardDepthAngle)
+            countsAt: onScale(bottomThreshold)
         )
     }
 
@@ -274,9 +278,9 @@ struct DipTracker: MovementTracker {
     /// the angle turns around. Waiting for the rep to finish meant the line
     /// didn't appear until the second one. See `PushUpTracker.settleDepth`.
     private mutating func settleDepth(reaching angle: Double) {
-        guard settledMin == nil,
-              let low = repMin, let high = repMax,
+        guard let low = repMin, let high = repMax,
               high - low >= minimumRange,
+              low < (settledMin ?? .infinity),
               angle > low + 2
         else { return }
 

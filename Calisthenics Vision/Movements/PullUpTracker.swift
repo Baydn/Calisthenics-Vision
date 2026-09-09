@@ -46,9 +46,10 @@ struct PullUpTracker: MovementTracker {
     /// the first frame of the recording. See `PushUpTracker`.
     var standardDepthFraction: Double = 0.80
 
-    /// How close to your own measured bottom counts, in degrees. Can only
-    /// ever make the gate more forgiving than the standard, never stricter,
-    /// which is what stops a short range counting nothing (Law 3).
+    /// How close to your own measured bottom counts, in degrees. Applies
+    /// *only* where a rep has shown the standard is out of reach, which is
+    /// what stops a short range counting nothing (Law 3). Everyone else is
+    /// judged against the line they can see. See `PushUpTracker`.
     var depthTolerance: Double = 15
 
     var minConfidence: Float = 0.5
@@ -126,7 +127,10 @@ struct PullUpTracker: MovementTracker {
 
     /// At or below this the pull counts as high enough.
     var topThreshold: Double {
-        max(standardDepthAngle, (settledMin ?? -.infinity) + depthTolerance)
+        guard let settledMin, settledMin > standardDepthAngle else {
+            return standardDepthAngle
+        }
+        return settledMin + depthTolerance
     }
 
     /// Ends of the meter's scale: a dead hang at one end, chin over the bar
@@ -139,7 +143,7 @@ struct PullUpTracker: MovementTracker {
     var depthGauge: DepthGauge? {
         DepthGauge(
             depth: (isOnBar ? lastElbowAngle : nil).map(onScale),
-            countsAt: onScale(standardDepthAngle),
+            countsAt: onScale(topThreshold),
             risesOnScreen: true
         )
     }
@@ -288,9 +292,9 @@ struct PullUpTracker: MovementTracker {
     /// Sets the target at the top of the first pull, the moment the elbow
     /// turns around and starts back down. See `PushUpTracker.settleDepth`.
     private mutating func settleDepth(reaching elbow: Double) {
-        guard settledMin == nil,
-              let low = repMin, let high = repMax,
+        guard let low = repMin, let high = repMax,
               high - low >= minimumRange,
+              low < (settledMin ?? .infinity),
               elbow > low + 2
         else { return }
 

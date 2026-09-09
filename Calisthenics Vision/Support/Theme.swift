@@ -85,6 +85,15 @@ enum Theme {
         }
         /// Content appearing or changing value.
         static var content: Animation { .snappy(duration: 0.22) }
+        /// A live readout following live data — the depth meter's fill.
+        ///
+        /// Much shorter than `content`, because this one is retargeted every
+        /// captured frame: it has to take the stutter off a landmark estimate
+        /// without lagging behind the body it's being read against. Raise the
+        /// response to smooth harder, at the cost of the bar trailing you.
+        static var gauge: Animation {
+            .interpolatingSpring(stiffness: 320, damping: 34)
+        }
     }
 
     // MARK: - Metrics

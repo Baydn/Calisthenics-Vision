@@ -45,9 +45,10 @@ struct SquatTracker: MovementTracker {
     /// the first frame of the recording. See `PushUpTracker`.
     var standardDepthFraction: Double = 0.80
 
-    /// How close to your own measured bottom counts, in degrees. Can only
-    /// ever make the gate more forgiving than the standard, never stricter,
-    /// which is what stops a short range counting nothing (Law 3).
+    /// How close to your own measured bottom counts, in degrees. Applies
+    /// *only* where a rep has shown the standard is out of reach, which is
+    /// what stops a short range counting nothing (Law 3). Everyone else is
+    /// judged against the line they can see. See `PushUpTracker`.
     var depthTolerance: Double = 15
 
     var minConfidence: Float = 0.5
@@ -118,7 +119,10 @@ struct SquatTracker: MovementTracker {
     }
 
     var bottomThreshold: Double {
-        max(standardDepthAngle, (settledMin ?? -.infinity) + depthTolerance)
+        guard let settledMin, settledMin > standardDepthAngle else {
+            return standardDepthAngle
+        }
+        return settledMin + depthTolerance
     }
 
     /// Ends of the meter's scale: standing at the top, a deep squat at the
@@ -129,7 +133,7 @@ struct SquatTracker: MovementTracker {
     var depthGauge: DepthGauge? {
         DepthGauge(
             depth: (isInPosition ? lastKneeAngle : nil).map(onScale),
-            countsAt: onScale(standardDepthAngle)
+            countsAt: onScale(bottomThreshold)
         )
     }
 
@@ -273,9 +277,9 @@ struct SquatTracker: MovementTracker {
     /// the angle turns around. Waiting for the rep to finish meant the line
     /// didn't appear until the second one. See `PushUpTracker.settleDepth`.
     private mutating func settleDepth(reaching angle: Double) {
-        guard settledMin == nil,
-              let low = repMin, let high = repMax,
+        guard let low = repMin, let high = repMax,
               high - low >= minimumRange,
+              low < (settledMin ?? .infinity),
               angle > low + 2
         else { return }
 
