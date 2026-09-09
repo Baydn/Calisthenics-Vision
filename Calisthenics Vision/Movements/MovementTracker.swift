@@ -75,16 +75,20 @@ enum IdealLine: Equatable {
 struct DepthGauge: Equatable {
     /// 0 at full extension, 1 at the deep end of the scale.
     var depth: Double
-    /// Where on the same scale the rep begins to count.
-    var countsAt: Double
-    /// False while the gate is still the seed rather than the person's own
-    /// range, so the line can be drawn as provisional rather than as fact.
-    var isCalibrated: Bool
+    /// Where on the same scale the rep begins to count — nil until the
+    /// person's own range is known.
+    ///
+    /// Drawing the pre-calibration seed here was a mistake: a push-up's seed
+    /// bottom of 90° lands 90% down a bar scaled 180°→80°, far deeper than
+    /// anyone's real gate, so the line sat at the floor and then leapt up the
+    /// moment the first rep landed. No line is better than a wrong one, and
+    /// the bar itself is readable from the first frame regardless.
+    var countsAt: Double?
     /// Whether depth runs *up* the screen. A pull-up's deep end is its top,
     /// and a meter that filled downward as the body rose would read backwards.
     var risesOnScreen = false
 
-    var hasReachedGate: Bool { depth >= countsAt }
+    var hasReachedGate: Bool { countsAt.map { depth >= $0 } ?? false }
 }
 
 enum FormIssue: String, Equatable {

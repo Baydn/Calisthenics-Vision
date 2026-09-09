@@ -56,6 +56,8 @@ struct DipTracker: MovementTracker {
 
     private(set) var observedMin: Double?
     private(set) var observedMax: Double?
+    /// Last angle fed to `observeRange`, to tell moving from holding still.
+    private var lastRangeAngle: Double?
 
     var observedRange: Double? {
         guard let observedMin, let observedMax else { return nil }
@@ -83,8 +85,7 @@ struct DipTracker: MovementTracker {
         guard isOnBars, let elbow = lastElbowAngle else { return nil }
         return DepthGauge(
             depth: onScale(elbow),
-            countsAt: onScale(bottomThreshold),
-            isCalibrated: isCalibrated
+            countsAt: isCalibrated ? onScale(bottomThreshold) : nil
         )
     }
 
@@ -156,12 +157,21 @@ struct DipTracker: MovementTracker {
         reachedDepth = false
         observedMin = nil
         observedMax = nil
+        lastRangeAngle = nil
     }
 
     // MARK: - Calibration
 
+    /// Decay runs only while you're moving, and floors at `minimumRange`:
+    /// holding still on the bars is not evidence about your range, and letting
+    /// it collapse un-learns the person mid-set. See
+    /// `PushUpTracker.observeRange` for the bug this fixes.
     private mutating func observeRange(_ elbow: Double) {
-        let decay = 0.05
+        let moved = abs(elbow - (lastRangeAngle ?? elbow)) > 0.5
+        lastRangeAngle = elbow
+
+        let slack = (observedRange ?? 0) - minimumRange
+        let decay = moved && slack > 0 ? min(0.05, slack / 2) : 0
         observedMax = max(elbow, (observedMax ?? elbow) - decay)
         observedMin = min(elbow, (observedMin ?? elbow) + decay)
     }

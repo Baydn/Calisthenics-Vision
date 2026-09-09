@@ -15,8 +15,9 @@
 //  Two deliberate silences. The meter dims to an empty track when the tracker
 //  isn't judging you, rather than holding the last value it saw — a frozen
 //  gauge reads as a live one, which is the same lie the skeleton's faded
-//  state exists to avoid. And the line is dashed until calibration settles,
-//  because until then it's the seed rather than your own gate.
+//  state exists to avoid. And there is no line at all until the tracker knows
+//  your range: drawing the pre-calibration seed put it at the very bottom of
+//  the bar, where it then jumped as soon as a real rep landed.
 //
 //  Not animated: this tracks pose data at capture frame rate, and easing it
 //  would put the bar behind the body it's meant to be read against.
@@ -56,6 +57,16 @@ struct DepthMeterView: View {
             .clipShape(Capsule())
             .overlay(Capsule().strokeBorder(Theme.Color.primaryText.opacity(0.3), lineWidth: 1))
             .opacity(gauge == nil ? 0.45 : 1)
+
+            // Said out loud rather than implied by a missing line: the first
+            // rep is what teaches the tracker how far you go.
+            if gauge != nil && gauge?.countsAt == nil {
+                Text("1ST REP")
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(Theme.Metric.labelTracking)
+                    .foregroundStyle(Theme.Color.secondaryText)
+                    .shadow(color: .black.opacity(0.6), radius: 4)
+            }
         }
         .shadow(color: .black.opacity(0.45), radius: 6)
     }
@@ -65,16 +76,15 @@ struct DepthMeterView: View {
     /// the empty half of the bar.
     @ViewBuilder
     private var gateLine: some View {
-        if let gauge {
-            let fromTop = gauge.risesOnScreen ? 1 - gauge.countsAt : gauge.countsAt
+        if let gauge, let countsAt = gauge.countsAt {
+            let fromTop = gauge.risesOnScreen ? 1 - countsAt : countsAt
             ZStack {
                 Rectangle()
                     .fill(.black.opacity(0.55))
                     .frame(height: 5)
                 Rectangle()
                     .fill(Theme.Color.primaryText)
-                    .frame(height: gauge.isCalibrated ? 2.5 : 1.5)
-                    .opacity(gauge.isCalibrated ? 1 : 0.7)
+                    .frame(height: 2.5)
             }
             .frame(width: width)
             .offset(y: height * min(1, max(0, fromTop)) - 2.5)
@@ -84,12 +94,10 @@ struct DepthMeterView: View {
 
 #Preview {
     HStack(spacing: 44) {
-        DepthMeterView(gauge: DepthGauge(depth: 0.2, countsAt: 0.62, isCalibrated: true))
-        DepthMeterView(gauge: DepthGauge(depth: 0.8, countsAt: 0.62, isCalibrated: true))
-        DepthMeterView(gauge: DepthGauge(depth: 0.35, countsAt: 0.62, isCalibrated: false))
-        DepthMeterView(
-            gauge: DepthGauge(depth: 0.7, countsAt: 0.58, isCalibrated: true, risesOnScreen: true)
-        )
+        DepthMeterView(gauge: DepthGauge(depth: 0.2, countsAt: 0.56))
+        DepthMeterView(gauge: DepthGauge(depth: 0.8, countsAt: 0.56))
+        DepthMeterView(gauge: DepthGauge(depth: 0.35, countsAt: nil))
+        DepthMeterView(gauge: DepthGauge(depth: 0.7, countsAt: 0.58, risesOnScreen: true))
         DepthMeterView(gauge: nil)
     }
     .padding(40)

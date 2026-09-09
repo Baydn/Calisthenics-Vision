@@ -71,6 +71,8 @@ struct PullUpTracker: MovementTracker {
 
     private(set) var observedMin: Double?
     private(set) var observedMax: Double?
+    /// Last angle fed to `observeRange`, to tell moving from holding still.
+    private var lastRangeAngle: Double?
 
     var observedRange: Double? {
         guard let observedMin, let observedMax else { return nil }
@@ -106,8 +108,7 @@ struct PullUpTracker: MovementTracker {
         guard isOnBar, let elbow = lastElbowAngle else { return nil }
         return DepthGauge(
             depth: onScale(elbow),
-            countsAt: onScale(topThreshold),
-            isCalibrated: isCalibrated,
+            countsAt: isCalibrated ? onScale(topThreshold) : nil,
             risesOnScreen: true
         )
     }
@@ -178,12 +179,21 @@ struct PullUpTracker: MovementTracker {
         badFormFrames = 0
         observedMin = nil
         observedMax = nil
+        lastRangeAngle = nil
     }
 
     // MARK: - Calibration
 
+    /// Decay runs only while you're moving, and floors at `minimumRange`:
+    /// hanging still is not evidence about your range, and letting
+    /// it collapse un-learns the person mid-set. See
+    /// `PushUpTracker.observeRange` for the bug this fixes.
     private mutating func observeRange(_ elbow: Double) {
-        let decay = 0.05                       // ≈1.5°/s at 30 FPS
+        let moved = abs(elbow - (lastRangeAngle ?? elbow)) > 0.5
+        lastRangeAngle = elbow
+
+        let slack = (observedRange ?? 0) - minimumRange
+        let decay = moved && slack > 0 ? min(0.05, slack / 2) : 0     // ≈1.5°/s at 30 FPS
         observedMax = max(elbow, (observedMax ?? elbow) - decay)
         observedMin = min(elbow, (observedMin ?? elbow) + decay)
     }

@@ -67,6 +67,8 @@ struct SquatTracker: MovementTracker {
 
     private(set) var observedMin: Double?
     private(set) var observedMax: Double?
+    /// Last angle fed to `observeRange`, to tell moving from holding still.
+    private var lastRangeAngle: Double?
 
     var observedRange: Double? {
         guard let observedMin, let observedMax else { return nil }
@@ -94,8 +96,7 @@ struct SquatTracker: MovementTracker {
         guard isInPosition, let knee = lastKneeAngle else { return nil }
         return DepthGauge(
             depth: onScale(knee),
-            countsAt: onScale(bottomThreshold),
-            isCalibrated: isCalibrated
+            countsAt: isCalibrated ? onScale(bottomThreshold) : nil
         )
     }
 
@@ -165,12 +166,21 @@ struct SquatTracker: MovementTracker {
         badFormFrames = 0
         observedMin = nil
         observedMax = nil
+        lastRangeAngle = nil
     }
 
     // MARK: - Calibration
 
+    /// Decay runs only while you're moving, and floors at `minimumRange`:
+    /// standing still is not evidence about your range, and letting
+    /// it collapse un-learns the person mid-set. See
+    /// `PushUpTracker.observeRange` for the bug this fixes.
     private mutating func observeRange(_ knee: Double) {
-        let decay = 0.05                       // ≈1.5°/s at 30 FPS
+        let moved = abs(knee - (lastRangeAngle ?? knee)) > 0.5
+        lastRangeAngle = knee
+
+        let slack = (observedRange ?? 0) - minimumRange
+        let decay = moved && slack > 0 ? min(0.05, slack / 2) : 0     // ≈1.5°/s at 30 FPS
         observedMax = max(knee, (observedMax ?? knee) - decay)
         observedMin = min(knee, (observedMin ?? knee) + decay)
     }

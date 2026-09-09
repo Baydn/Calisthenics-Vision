@@ -108,6 +108,8 @@ struct PushUpTracker: MovementTracker {
     /// HUD can show why something is or isn't counting.
     private(set) var observedMin: Double?
     private(set) var observedMax: Double?
+    /// Last angle fed to `observeRange`, to tell moving from holding still.
+    private var lastRangeAngle: Double?
 
     var observedRange: Double? {
         guard let observedMin, let observedMax else { return nil }
@@ -143,8 +145,7 @@ struct PushUpTracker: MovementTracker {
         guard isInPosition, let elbow = lastElbowAngle else { return nil }
         return DepthGauge(
             depth: onScale(elbow),
-            countsAt: onScale(bottomThreshold),
-            isCalibrated: isCalibrated
+            countsAt: isCalibrated ? onScale(bottomThreshold) : nil
         )
     }
 
@@ -199,14 +200,38 @@ struct PushUpTracker: MovementTracker {
         badFormFrames = 0
         observedMin = nil
         observedMax = nil
+        lastRangeAngle = nil
     }
 
     // MARK: - Calibration
 
     /// Widens the observed range, letting stale extremes decay slowly so one
     /// unusually deep rep — or a bad frame — doesn't set the gates forever.
+    ///
+    /// Two things bound the decay, and both were bugs.
+    ///
+    /// **It only runs while you're moving.** An extreme goes stale because
+    /// you've since done reps that didn't reach it — not because time passed.
+    /// Decaying every frame regardless ate the range at 1.5°/s while you
+    /// simply held the top of a plank, so half a minute of rest un-learned
+    /// the person mid-set: gates collapsed to a few degrees apart, narrow
+    /// enough for a small bob to score a rep, and the depth meter's line
+    /// wandered up the bar and then snapped to the pre-calibration seed.
+    ///
+    /// **And it floors at `minimumRange`.** Below that the range is too
+    /// narrow to have been trustworthy in the first place, so there's nothing
+    /// left worth forgetting.
     private mutating func observeRange(_ elbow: Double) {
-        let decay = 0.05                       // ≈1.5°/s at 30 FPS
+        // 0.5°/frame ≈ 15°/s. A real rep sweeps its range in about a second,
+        // an order of magnitude above this; a smoothed, stationary landmark
+        // sits well under it.
+        let moved = abs(elbow - (lastRangeAngle ?? elbow)) > 0.5
+        lastRangeAngle = elbow
+
+        // Both ends move each frame, so half the slack is the most either can
+        // take without carrying the range below the floor.
+        let slack = (observedRange ?? 0) - minimumRange
+        let decay = moved && slack > 0 ? min(0.05, slack / 2) : 0
         observedMax = max(elbow, (observedMax ?? elbow) - decay)
         observedMin = min(elbow, (observedMin ?? elbow) + decay)
     }
