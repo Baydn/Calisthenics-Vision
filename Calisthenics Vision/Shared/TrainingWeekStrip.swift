@@ -60,9 +60,10 @@ struct TrainingWeek {
                 date: date,
                 didTrain: active.contains(date),
                 isToday: offset == 0,
-                // veryShortWeekdaySymbols is indexed from the calendar's own
-                // first weekday, not from Sunday, so this stays correct in
-                // locales that start the week on Monday.
+                // Both are Sunday-based regardless of locale: the weekday
+                // component numbers Sunday as 1, and the symbols array is
+                // indexed from Sunday at 0. firstWeekday doesn't enter into
+                // it, and shifting by it would relabel every column.
                 initial: calendar.veryShortWeekdaySymbols[weekday - 1]
             )
         }
