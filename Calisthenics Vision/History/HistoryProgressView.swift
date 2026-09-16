@@ -56,6 +56,16 @@ enum ProgressRange: String, CaseIterable, Hashable {
         case .all:              "MONTHLY"
         }
     }
+
+    /// The same grouping said as a rate, for a label sitting next to a
+    /// number: "AVG PER WEEK" rather than "AVG WEEKLY".
+    var perBucketLabel: String {
+        switch self {
+        case .month:            "PER DAY"
+        case .halfYear, .year:  "PER WEEK"
+        case .all:              "PER MONTH"
+        }
+    }
 }
 
 struct HistoryProgressView: View {
@@ -287,6 +297,7 @@ struct HistoryProgressView: View {
             TrendChart(
                 points: trend,
                 isDimmed: !entitlements.isProUnlocked,
+                perBucketLabel: range.perBucketLabel,
                 formatter: measuresHold
                     ? { SessionResult.durationLabel($0) }
                     : { "\(Int($0))" }
@@ -326,13 +337,33 @@ private extension Array where Element == Double {
     }
 }
 
+/// The trend bars, with enough reference to answer "is that bar good?".
+///
+/// A row of bars on its own can only be read against itself: the tallest one
+/// is full height whether it's four reps or four hundred, and every other bar
+/// is a fraction of something unlabelled. Three things fix that without
+/// adding chrome — a faint track behind each bar so an empty period still
+/// occupies space and reads as a period you didn't train, a dashed line at
+/// your own average so every bar is immediately above or below it, and the
+/// two numbers that set the scale printed underneath.
 private struct TrendChart: View {
     let points: [TrendPoint]
     let isDimmed: Bool
+    /// "PER DAY" / "PER WEEK" / "PER MONTH", following the selected range.
+    let perBucketLabel: String
     let formatter: (Double) -> String
 
+    private let plotHeight: CGFloat = 150
+
+    private var maxValue: Double { max(points.map(\.value).max() ?? 1, 1) }
+
+    private var average: Double {
+        guard !points.isEmpty else { return 0 }
+        return points.reduce(0) { $0 + $1.value } / Double(points.count)
+    }
+
     var body: some View {
-        GeometryReader { proxy in
+        VStack(spacing: 0) {
             if points.isEmpty {
                 // An empty chart is better than an invented one: fabricated
                 // bars read as real training history.
@@ -345,53 +376,141 @@ private struct TrendChart: View {
                         .foregroundStyle(Theme.Color.tertiaryText)
                         .multilineTextAlignment(.center)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 60)
             } else {
-                chart(in: proxy.size)
+                bars
+                    .padding(.horizontal, 20)
+                    .padding(.top, 18)
+                footer
             }
         }
+        .frame(maxWidth: .infinity)
         .background(Theme.Color.card, in: .rect(cornerRadius: Theme.Metric.cardRadius))
     }
 
-    private func chart(in size: CGSize) -> some View {
-        let maxValue = max(points.map(\.value).max() ?? 1, 1)
-        let available = size.width - 40
-        let spacing: CGFloat = 8
-        let barWidth = max(
-            6,
-            (available - spacing * CGFloat(points.count - 1)) / CGFloat(points.count)
-        )
-        let plotHeight = size.height - 58
+    // MARK: - Bars
 
-        return VStack(spacing: 6) {
-            // Peak value, so the bars carry a scale rather than being
-            // decorative shapes.
-            Text(formatter(maxValue))
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundStyle(Theme.Color.tertiaryText)
-                .frame(maxWidth: .infinity, alignment: .trailing)
+    private var bars: some View {
+        VStack(spacing: 6) {
+            ZStack(alignment: .bottom) {
+                HStack(alignment: .bottom, spacing: 8) {
+                    ForEach(points) { point in
+                        ZStack(alignment: .bottom) {
+                            // The track is the whole plot, so a period with
+                            // nothing in it is still a column rather than a
+                            // gap the eye skips over.
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Theme.Color.primaryText.opacity(0.05))
+                                .frame(height: plotHeight)
 
-            HStack(alignment: .bottom, spacing: spacing) {
-                ForEach(points) { point in
-                    VStack(spacing: 5) {
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(Theme.Color.primaryText.opacity(
-                                isDimmed ? 0.12 : (point.isToday ? 1.0 : 0.75)
-                            ))
-                            .frame(
-                                width: barWidth,
-                                height: max(2, (point.value / maxValue) * plotHeight)
-                            )
-                        Text(point.label)
-                            .font(.system(size: 9, weight: .medium, design: .monospaced))
-                            .foregroundStyle(Theme.Color.tertiaryText)
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Theme.Color.primaryText.opacity(
+                                    isDimmed ? 0.12 : (point.isToday ? 1.0 : 0.75)
+                                ))
+                                .frame(height: max(2, (point.value / maxValue) * plotHeight))
+                        }
+                        .frame(maxWidth: 36)
                     }
                 }
+                .frame(height: plotHeight, alignment: .bottom)
+
+                averageLine
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .frame(height: plotHeight)
+
+            HStack(alignment: .top, spacing: 8) {
+                ForEach(points) { point in
+                    Text(point.label)
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Theme.Color.tertiaryText)
+                        .frame(maxWidth: 36)
+                }
+            }
+        }
+    }
+
+    /// Drawn at your own average rather than at a goal: this app has never
+    /// asked anyone to set a target, and inventing one here would be the
+    /// first place it did.
+    private var averageLine: some View {
+        let height = min(plotHeight, (average / maxValue) * plotHeight)
+
+        // Pinned by padding from the bottom rather than by an offset, so the
+        // rule lands exactly `height` above the baseline the bars grow from.
+        // A ZStack sized to its tallest child would float the line by half a
+        // label's height, which is a few percent of the scale.
+        return VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            ZStack(alignment: .trailing) {
+                Rectangle()
+                    .fill(Theme.Color.primaryText.opacity(isDimmed ? 0.1 : 0.32))
+                    .frame(height: 1)
+                    .overlay {
+                        // Dashed in the card colour over the fill, so it
+                        // reads as a reference rather than as a bar's edge.
+                        Line()
+                            .stroke(
+                                Theme.Color.card,
+                                style: StrokeStyle(lineWidth: 1, dash: [2, 3])
+                            )
+                            .opacity(isDimmed ? 0 : 0.9)
+                    }
+
+                Text("AVG")
+                    .font(.system(size: 8, weight: .bold))
+                    .tracking(Theme.Metric.labelTracking)
+                    .foregroundStyle(Theme.Color.tertiaryText)
+                    .padding(.horizontal, 3)
+                    .background(Theme.Color.card)
+                    .offset(y: -8)
+                    .opacity(isDimmed ? 0 : 1)
+            }
+            .frame(height: 1)
+            .padding(.bottom, height)
+        }
+        .frame(height: plotHeight)
+        .allowsHitTesting(false)
+    }
+
+    // MARK: - Footer
+
+    /// The two numbers that give the bars a scale. Inside the card, and so
+    /// inside the Pro scrim above it — these describe the locked chart and
+    /// shouldn't leak out from under the lock.
+    private var footer: some View {
+        HStack(spacing: 14) {
+            stat("BEST", formatter(maxValue))
+            Rectangle()
+                .fill(Theme.Color.primaryText.opacity(0.08))
+                .frame(width: 1, height: 26)
+            stat("AVG \(perBucketLabel)", formatter(average))
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .padding(.top, 16)
+        .padding(.bottom, 16)
+    }
+
+    private func stat(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .cardLabelStyle()
+                .lineLimit(1)
+            Text(value)
+                .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Theme.Color.primaryText)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// A horizontal rule, for dashing over a filled line.
+private struct Line: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: 0, y: rect.midY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+        return path
     }
 }
 
