@@ -38,6 +38,23 @@ struct SetSummaryView: View {
         SessionStore.context(for: session, among: allSessions)
     }
 
+    /// The week including the set just finished — this screen is shown after
+    /// the session is saved, so today's mark is already filled in and the
+    /// strip reads as a consequence of the work rather than as a to-do list.
+    ///
+    /// Placed here, directly under the rank, because this is the one moment
+    /// the app has someone's attention and something true to say about
+    /// coming back: the rank grades the set, the strip grades the habit.
+    private var weekStrip: some View {
+        TrainingWeekStrip(
+            week: TrainingWeek.make(from: allSessions),
+            dayStreak: SessionStore.stats(for: allSessions).dayStreak
+        )
+        .padding(.horizontal, 16)
+        .padding(.vertical, 16)
+        .background(Theme.Color.card, in: .rect(cornerRadius: Theme.Metric.cardRadius))
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
@@ -45,6 +62,9 @@ struct SetSummaryView: View {
                     .padding(.bottom, 14)
 
                 contextChips
+                    .padding(.bottom, 22)
+
+                weekStrip
                     .padding(.bottom, 30)
 
                 if session.movement.isTimedHold, session.holdSegments.count > 1 {

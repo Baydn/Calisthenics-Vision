@@ -2,13 +2,23 @@
 //  HistoryListView.swift
 //  Calisthenics Vision
 //
-//  Sessions grouped by day under relative section headers.
+//  Sessions grouped by day under relative section headers, with the last
+//  seven days summarised above them.
+//
+//  The strip at the top scrolls away with the content rather than living in
+//  the tab's fixed header — that header is kept short on purpose, since
+//  everything in it pushes the first session row down the screen. Here it
+//  costs nothing: you see the week, and the moment you start reading history
+//  it gets out of the way.
 //
 
 import SwiftUI
 
 struct HistoryListView: View {
     let sessions: [WorkoutSession]
+    /// Streak, when the hosting tab has already computed it. Passed in
+    /// rather than recomputed so the two can't drift apart.
+    var dayStreak: Int = 0
 
     /// Newest first, at both levels. Days descend, and so do the sessions
     /// inside each day — the set you just finished is the first thing you see
@@ -24,6 +34,12 @@ struct HistoryListView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 26) {
+                TrainingWeekStrip(
+                    week: TrainingWeek.make(from: sessions),
+                    dayStreak: dayStreak
+                )
+                .padding(.bottom, 2)
+
                 ForEach(grouped, id: \.day) { group in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(Self.sectionTitle(for: group.day))

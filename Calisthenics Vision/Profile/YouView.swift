@@ -53,7 +53,7 @@ struct YouView: View {
                         emptyState
                     } else {
                         switch section {
-                        case .activities: HistoryListView(sessions: sessions)
+                        case .activities: HistoryListView(sessions: sessions, dayStreak: stats.dayStreak)
                         case .progress:   HistoryProgressView(sessions: sessions, stats: stats)
                         case .workouts:   WorkoutsView()
                         }
