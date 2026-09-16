@@ -61,6 +61,31 @@ struct AngleZone: Identifiable {
 
 /// An angle worth plotting, already sampled and banded.
 struct AngleTimeline: Identifiable {
+
+    /// What the numbers on the y-axis mean, which decides how a band's
+    /// extent is written out. "140–165°" and "within 10° of level" are the
+    /// same sentence about two different scales, and only the timeline knows
+    /// which one it is on.
+    enum Measure {
+        /// Degrees at a joint. Bigger is straighter.
+        case absolute
+        /// Degrees away from whatever the movement is aiming at, so zero is
+        /// perfect and smaller is better.
+        case deviation
+    }
+
+    /// The extremes and the middle of the plotted window.
+    ///
+    /// Measured from every sample before downsampling — the drawn line is
+    /// averaged into buckets, so reading the extremes off it would quietly
+    /// under-report the deepest rep. The mean is time-weighted for the same
+    /// reason the zone shares are: a dropped frame shouldn't move it.
+    struct Summary {
+        let lowest: Double
+        let highest: Double
+        let mean: Double
+    }
+
     struct Sample {
         /// Seconds from the start of the plotted window.
         let seconds: Double
@@ -86,8 +111,38 @@ struct AngleTimeline: Identifiable {
     let duration: Double
     /// Degrees at the bottom and top of the drawn chart.
     let displayRange: ClosedRange<Double>
+    let measure: Measure
+    let summary: Summary
 
     func share(of zone: AngleZone) -> Double { shares[zone.name] ?? 0 }
+
+    /// How far the joint travelled, written for this timeline's scale.
+    var spanLabel: String {
+        measure == .deviation
+            ? "\(degrees(summary.lowest)) best · \(degrees(summary.highest)) worst"
+            : "\(degrees(summary.lowest))–\(degrees(summary.highest))"
+    }
+
+    var meanLabel: String { degrees(summary.mean) }
+
+    /// A band's extent in words. Open-ended at both ends of the scale,
+    /// because a band that runs to the edge has no second number to show.
+    func extentLabel(_ zone: AngleZone) -> String {
+        let isTop = zone.upper >= 180
+        let isBottom = zone.lower <= 0
+
+        switch (measure, isBottom, isTop) {
+        case (.deviation, true, _):  return "within \(degrees(zone.upper))"
+        case (.deviation, _, true):  return "over \(degrees(zone.lower))"
+        case (.absolute, _, true):   return "\(degrees(zone.lower))+"
+        case (.absolute, true, _):   return "under \(degrees(zone.upper))"
+        default:                     return "\(degrees(zone.lower))–\(degrees(zone.upper))"
+        }
+    }
+
+    private func degrees(_ value: Double) -> String {
+        "\(Int(value.rounded()))°"
+    }
 }
 
 enum AngleBands {
@@ -184,7 +239,8 @@ enum AngleBands {
         explanation: String,
         points: [(Int, Double)],
         zones: [AngleZone],
-        displayRange: ClosedRange<Double>
+        displayRange: ClosedRange<Double>,
+        measure: AngleTimeline.Measure = .absolute
     ) -> AngleTimeline? {
         guard points.count >= 8, let start = points.first?.0, let end = points.last?.0 else {
             return nil
@@ -209,7 +265,37 @@ enum AngleBands {
             zones: zones,
             shares: zoneShares,
             duration: duration,
-            displayRange: displayRange
+            displayRange: displayRange,
+            measure: measure,
+            summary: summary(points)
+        )
+    }
+
+    /// Extremes off every sample, mean weighted by the time each sample
+    /// stands for — the same interval rule `shares` uses, so a stretch where
+    /// tracking dropped out can't pull the average toward whatever the last
+    /// good frame happened to read.
+    static func summary(_ points: [(Int, Double)]) -> AngleTimeline.Summary {
+        let values = points.map(\.1)
+        var weighted: Double = 0
+        var total: Double = 0
+
+        for (index, point) in points.enumerated() {
+            let next = index + 1 < points.count ? points[index + 1].0 : point.0
+            let delta = min(max(next - point.0, 0), maxFrameGapMs)
+            guard delta > 0 else { continue }
+            weighted += point.1 * Double(delta)
+            total += Double(delta)
+        }
+
+        let mean = total > 0
+            ? weighted / total
+            : (values.isEmpty ? 0 : values.reduce(0, +) / Double(values.count))
+
+        return AngleTimeline.Summary(
+            lowest: values.min() ?? 0,
+            highest: values.max() ?? 0,
+            mean: mean
         )
     }
 
@@ -341,7 +427,8 @@ enum AngleBands {
             """,
             points: level,
             zones: plancheLevelZones,
-            displayRange: deviationRange(for: level, ceiling: 45)
+            displayRange: deviationRange(for: level, ceiling: 45),
+            measure: .deviation
         ) {
             result.append(timeline)
         }
@@ -357,7 +444,8 @@ enum AngleBands {
             """,
             points: straight,
             zones: plancheStraightZones,
-            displayRange: deviationRange(for: straight, ceiling: 45)
+            displayRange: deviationRange(for: straight, ceiling: 45),
+            measure: .deviation
         ) {
             result.append(timeline)
         }

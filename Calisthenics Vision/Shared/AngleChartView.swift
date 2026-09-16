@@ -16,6 +16,13 @@
 //  and it turns "your shoulder opened at 6 seconds" into the frame where it
 //  happened.
 //
+//  The legend is a list rather than a row of dots, and it carries each band's
+//  actual extent in degrees. A dot labelled "Stacked 42%" tells you where you
+//  spent your time but never what the word means, so the only way to find out
+//  was to open the ⓘ and read a paragraph. Printing "165°+" next to the name
+//  answers it in place, and the share bar beside it makes three percentages
+//  comparable at a glance instead of three numbers to subtract.
+//
 
 import SwiftUI
 
@@ -37,6 +44,7 @@ struct AngleChartCard: View {
             legend
             chart
             axis
+            footer
         }
         .padding(18)
         .background(Theme.Color.card, in: .rect(cornerRadius: Theme.Metric.cardRadius))
@@ -80,22 +88,60 @@ struct AngleChartCard: View {
     // MARK: - Legend
 
     private var legend: some View {
-        // Wraps rather than scrolls: three short labels fit a phone, and a
-        // legend you have to swipe is a legend nobody reads.
-        HStack(spacing: 14) {
+        // One row per band, top band first, which is also top-first on the
+        // chart — the list and the picture read in the same direction.
+        VStack(spacing: 8) {
             ForEach(timeline.zones) { zone in
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(Self.lineColor(zone.tone))
-                        .frame(width: 8, height: 8)
-                    Text("\(percent(timeline.share(of: zone))) \(zone.name)")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Self.lineColor(zone.tone))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
+                legendRow(zone)
             }
-            Spacer(minLength: 0)
+        }
+    }
+
+    private func legendRow(_ zone: AngleZone) -> some View {
+        let share = timeline.share(of: zone)
+        let tint = Self.lineColor(zone.tone)
+
+        return HStack(spacing: 10) {
+            // The colour lives on the bar, not on the name: it's the same
+            // swatch as the band behind the line, so the eye can jump from
+            // the row to the stripe it describes.
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(tint)
+                .frame(width: 3, height: 24)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(zone.name)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.Color.primaryText)
+                    .lineLimit(1)
+                Text(timeline.extentLabel(zone))
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Theme.Color.tertiaryText)
+            }
+
+            Spacer(minLength: 8)
+
+            shareBar(share, tint: tint)
+
+            Text(percent(share))
+                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                .foregroundStyle(share > 0 ? tint : Theme.Color.tertiaryText)
+                .frame(width: 40, alignment: .trailing)
+        }
+    }
+
+    /// A short track of how much of the set was spent in this band. Fixed
+    /// width so the three bars line up and can be compared to each other
+    /// rather than each being read against its own label.
+    private func shareBar(_ share: Double, tint: SwiftUI.Color) -> some View {
+        let width: CGFloat = 54
+        return ZStack(alignment: .leading) {
+            Capsule()
+                .fill(Theme.Color.primaryText.opacity(0.08))
+                .frame(width: width, height: 4)
+            Capsule()
+                .fill(tint)
+                .frame(width: max(share > 0 ? 2 : 0, width * share), height: 4)
         }
     }
 
@@ -246,6 +292,40 @@ struct AngleChartCard: View {
         seconds >= 60
             ? SessionResult.durationLabel(seconds)
             : "\(Int(seconds.rounded()))s"
+    }
+
+    // MARK: - Footer
+
+    /// What the line came to, in two numbers.
+    ///
+    /// The bands answer "where was I", but not "how far did I actually
+    /// travel" — and that's the question somebody asks of their own chart
+    /// first. Both numbers are measured off every captured sample rather
+    /// than off the drawn line, which is bucket-averaged and would shave the
+    /// extremes.
+    private var footer: some View {
+        HStack(spacing: 14) {
+            footerStat(timeline.measure == .deviation ? "BEST / WORST" : "RANGE",
+                       timeline.spanLabel)
+            Rectangle()
+                .fill(Theme.Color.primaryText.opacity(0.08))
+                .frame(width: 1, height: 26)
+            footerStat("AVERAGE", timeline.meanLabel)
+        }
+        .padding(.top, 2)
+    }
+
+    private func footerStat(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .cardLabelStyle()
+            Text(value)
+                .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Theme.Color.primaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Colour
