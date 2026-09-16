@@ -15,8 +15,14 @@
 import SwiftUI
 
 /// One bar in the trend chart.
+///
+/// Identified by the bucket it covers rather than by a fresh UUID. A UUID
+/// makes every recomputation a different view as far as SwiftUI is concerned,
+/// so the bars could only ever pop in and out — with the date as the identity
+/// the same week's bar is the same bar across a filter change, and its height
+/// animates to the new value.
 struct TrendPoint: Identifiable {
-    let id = UUID()
+    let id: Date
     let label: String
     let value: Double
     let isToday: Bool
@@ -102,12 +108,16 @@ struct HistoryProgressView: View {
 
                     records
                         .padding(.bottom, 26)
+                        .animation(Theme.Motion.content, value: filter)
+                        .animation(Theme.Motion.content, value: range)
 
                     Text(trendTitle)
                         .sectionHeaderStyle()
                         .padding(.bottom, 10)
 
                     progressionTrend
+                        .animation(Theme.Motion.content, value: filter)
+                        .animation(Theme.Motion.content, value: range)
                 }
             }
             .padding(.horizontal, Theme.Metric.screenPadding)
@@ -190,6 +200,7 @@ struct HistoryProgressView: View {
                 ? (items.map(\.bestHold).max() ?? 0)
                 : Double(items.reduce(0) { $0 + $1.repCount })
             return TrendPoint(
+                id: start,
                 label: label(for: start, calendar: calendar),
                 value: value,
                 isToday: calendar.isDateInToday(start)
@@ -499,6 +510,7 @@ private struct TrendChart: View {
             Text(value)
                 .font(.system(size: 15, weight: .semibold, design: .monospaced))
                 .foregroundStyle(Theme.Color.primaryText)
+                .contentTransition(.numericText())
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -524,6 +536,7 @@ private struct RecordCard: View {
             Text(value)
                 .font(Theme.Font.cardNumber())
                 .foregroundStyle(Theme.Color.primaryText)
+                .contentTransition(.numericText())
             Spacer(minLength: 0)
             HStack(spacing: 4) {
                 Text(label)
