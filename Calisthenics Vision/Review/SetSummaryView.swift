@@ -31,6 +31,10 @@ struct SetSummaryView: View {
     /// Set once the pass has run, so "nothing to show" is only said after
     /// looking rather than during the first frame.
     @State private var didAnalyze = false
+    /// Held rather than recomputed: the streak walks every stored session,
+    /// and a computed property would redo that on every redraw of a screen
+    /// that scrolls.
+    @State private var dayStreak = 0
 
     private var analysis: SessionAnalysis? { SessionAnalyzer.analyze(session) }
 
@@ -48,7 +52,7 @@ struct SetSummaryView: View {
     private var weekStrip: some View {
         TrainingWeekStrip(
             week: TrainingWeek.make(from: allSessions),
-            dayStreak: SessionStore.stats(for: allSessions).dayStreak
+            dayStreak: dayStreak
         )
         .padding(.horizontal, 16)
         .padding(.vertical, 16)
@@ -116,6 +120,7 @@ struct SetSummaryView: View {
         .background(Theme.Color.background)
         .task {
             timelines = AngleTimelineBuilder.timelines(for: session)
+            dayStreak = SessionStore.stats(for: allSessions).dayStreak
             didAnalyze = true
         }
         .safeAreaInset(edge: .bottom) {
